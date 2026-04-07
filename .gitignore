@@ -1,0 +1,12 @@
+logs/
+__pycache__/
+*.pyc
+.opencode/
+.idea/
+.vscode/
+node_modules/
+nul
+.env
+*.egg-info/
+*.err.log
+*.out.log

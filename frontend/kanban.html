@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>个人看板 - 题库知识树</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: #f0f2f5;
+            min-height: 100vh;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 16px 32px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        }
+        .header h1 { font-size: 20px; font-weight: 600; }
+        .header-stats {
+            display: flex;
+            gap: 20px;
+            font-size: 14px;
+        }
+        .header-stats span { opacity: 0.9; }
+        .header-stats strong { font-weight: 600; }
+        .btn-back {
+            background: rgba(255,255,255,0.2);
+            border: 1px solid rgba(255,255,255,0.3);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            text-decoration: none;
+            transition: background 0.2s;
+        }
+        .btn-back:hover { background: rgba(255,255,255,0.3); }
+
+        .loading {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 60vh;
+            color: #94a3b8;
+            font-size: 16px;
+        }
+        .loading::after {
+            content: '';
+            width: 24px;
+            height: 24px;
+            border: 3px solid #e2e8f0;
+            border-top-color: #667eea;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin-left: 12px;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .tree-container {
+            padding: 32px;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .tree-root {
+            display: flex;
+            gap: 24px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .tech-branch {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+            overflow: hidden;
+            flex: 1;
+            min-width: 380px;
+            max-width: 600px;
+            transition: box-shadow 0.2s;
+        }
+        .tech-branch:hover {
+            box-shadow: 0 4px 20px rgba(0,0,0,0.12);
+        }
+
+        .tech-header {
+            padding: 16px 20px;
+            font-size: 18px;
+            font-weight: 700;
+            color: white;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            user-select: none;
+        }
+        .tech-header .toggle-icon {
+            font-size: 14px;
+            transition: transform 0.3s;
+        }
+        .tech-header.collapsed .toggle-icon {
+            transform: rotate(-90deg);
+        }
+        .tech-header .count {
+            font-size: 13px;
+            font-weight: 400;
+            opacity: 0.85;
+            background: rgba(255,255,255,0.2);
+            padding: 2px 10px;
+            border-radius: 10px;
+        }
+
+        .difficulty-section { padding: 0; }
+        .difficulty-section.hidden { display: none; }
+
+        .diff-header {
+            padding: 10px 20px 10px 24px;
+            font-size: 14px;
+            font-weight: 600;
+            color: #475569;
+            background: #f8fafc;
+            border-top: 1px solid #f1f5f9;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            user-select: none;
+        }
+        .diff-header .toggle-icon {
+            font-size: 12px;
+            transition: transform 0.3s;
+            color: #94a3b8;
+        }
+        .diff-header.collapsed .toggle-icon {
+            transform: rotate(-90deg);
+        }
+        .diff-header .count {
+            font-size: 12px;
+            color: #94a3b8;
+            font-weight: 400;
+        }
+
+        .diff-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+            margin-right: 8px;
+        }
+        .diff-badge.basic { background: #dcfce7; color: #16a34a; }
+        .diff-badge.medium { background: #fef9c3; color: #ca8a04; }
+        .diff-badge.hard { background: #fee2e2; color: #dc2626; }
+
+        .question-list { padding: 0; }
+        .question-list.hidden { display: none; }
+
+        .question-item {
+            padding: 10px 20px 10px 36px;
+            border-top: 1px solid #f8fafc;
+            font-size: 14px;
+            color: #334155;
+            line-height: 1.5;
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        .question-item:hover {
+            background: #f8fafc;
+        }
+        .question-item .q-index {
+            flex-shrink: 0;
+            width: 22px;
+            height: 22px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            font-weight: 600;
+            margin-top: 1px;
+        }
+        .question-item .q-text {
+            flex: 1;
+        }
+        .question-item .q-full {
+            display: none;
+            margin-top: 6px;
+            padding: 8px 12px;
+            background: #f1f5f9;
+            border-radius: 6px;
+            font-size: 13px;
+            color: #64748b;
+            line-height: 1.6;
+        }
+        .question-item.expanded .q-full {
+            display: block;
+        }
+
+        .tree-line {
+            position: relative;
+        }
+        .tree-line::before {
+            content: '';
+            position: absolute;
+            left: 16px;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: #e2e8f0;
+        }
+        .difficulty-section .diff-header::before {
+            content: '';
+            position: absolute;
+            left: 16px;
+            top: 50%;
+            width: 12px;
+            height: 2px;
+            background: #e2e8f0;
+        }
+
+        .error-msg {
+            text-align: center;
+            padding: 60px 20px;
+            color: #94a3b8;
+        }
+        .error-msg h3 {
+            color: #64748b;
+            margin-bottom: 8px;
+        }
+        .error-msg button {
+            margin-top: 16px;
+            padding: 8px 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .summary-bar {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        .summary-card {
+            background: white;
+            border-radius: 10px;
+            padding: 16px 24px;
+            box-shadow: 0 1px 6px rgba(0,0,0,0.06);
+            text-align: center;
+            min-width: 120px;
+        }
+        .summary-card .value {
+            font-size: 28px;
+            font-weight: 700;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .summary-card .label {
+            font-size: 13px;
+            color: #94a3b8;
+            margin-top: 4px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <h1>个人看板 - 题库知识树</h1>
+    <div class="header-stats" id="headerStats"></div>
+    <a class="btn-back" href="/index.html">返回面试</a>
+</div>
+
+<div class="tree-container">
+    <div class="summary-bar" id="summaryBar" style="display:none;"></div>
+    <div class="tree-root" id="treeRoot">
+        <div class="loading" id="loading">加载中...</div>
+    </div>
+</div>
+
+<script>
+    const API_BASE = '';
+    const DIFF_LABELS = { basic: '初级', medium: '中级', hard: '高级' };
+    const TECH_COLORS = [
+        'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+        'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
+        'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
+        'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)',
+        'linear-gradient(135deg, #fa709a 0%, #fee140 100%)',
+        'linear-gradient(135deg, #a18cd1 0%, #fbc2eb 100%)',
+    ];
+
+    async function loadTree() {
+        const root = document.getElementById('treeRoot');
+        const loading = document.getElementById('loading');
+        try {
+            const res = await fetch(`${API_BASE}/question-bank/tree`);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const data = await res.json();
+            loading.remove();
+            renderTree(data.tree);
+        } catch (e) {
+            loading.remove();
+            root.innerHTML = `
+                <div class="error-msg">
+                    <h3>无法加载题库数据</h3>
+                    <p>${e.message}</p>
+                    <button onclick="location.reload()">重新加载</button>
+                </div>
+            `;
+        }
+    }
+
+    function renderTree(tree) {
+        const root = document.getElementById('treeRoot');
+        const summaryBar = document.getElementById('summaryBar');
+        const headerStats = document.getElementById('headerStats');
+
+        let totalCount = 0;
+        let techCount = tree.length;
+        let diffCounts = { basic: 0, medium: 0, hard: 0 };
+
+        tree.forEach(tech => {
+            tech.children.forEach(diff => {
+                totalCount += diff.children.length;
+                diffCounts[diff.name] = (diffCounts[diff.name] || 0) + diff.children.length;
+            });
+        });
+
+        summaryBar.style.display = 'flex';
+        summaryBar.innerHTML = `
+            <div class="summary-card">
+                <div class="value">${techCount}</div>
+                <div class="label">技术栈</div>
+            </div>
+            <div class="summary-card">
+                <div class="value">${totalCount}</div>
+                <div class="label">总题目</div>
+            </div>
+            <div class="summary-card">
+                <div class="value">${diffCounts.basic || 0}</div>
+                <div class="label">初级</div>
+            </div>
+            <div class="summary-card">
+                <div class="value">${diffCounts.medium || 0}</div>
+                <div class="label">中级</div>
+            </div>
+            <div class="summary-card">
+                <div class="value">${diffCounts.hard || 0}</div>
+                <div class="label">高级</div>
+            </div>
+        `;
+
+        headerStats.innerHTML = `
+            <span>技术栈: <strong>${techCount}</strong></span>
+            <span>题目: <strong>${totalCount}</strong></span>
+        `;
+
+        tree.forEach((tech, ti) => {
+            const branch = document.createElement('div');
+            branch.className = 'tech-branch';
+
+            const techTotal = tech.children.reduce((s, d) => s + d.children.length, 0);
+            const color = TECH_COLORS[ti % TECH_COLORS.length];
+
+            let techHeader = document.createElement('div');
+            techHeader.className = 'tech-header';
+            techHeader.style.background = color;
+            techHeader.innerHTML = `
+                <span>${tech.name}</span>
+                <span style="display:flex;align-items:center;gap:8px;">
+                    <span class="count">${techTotal} 题</span>
+                    <span class="toggle-icon">▼</span>
+                </span>
+            `;
+
+            const diffContainer = document.createElement('div');
+            diffContainer.className = 'difficulty-section';
+
+            techHeader.addEventListener('click', () => {
+                techHeader.classList.toggle('collapsed');
+                diffContainer.classList.toggle('hidden');
+            });
+
+            tech.children.forEach(diff => {
+                const diffHeader = document.createElement('div');
+                diffHeader.className = 'diff-header';
+                diffHeader.style.position = 'relative';
+                diffHeader.innerHTML = `
+                    <span>
+                        <span class="diff-badge ${diff.name}">${diff.label}</span>
+                        ${diff.label}题目
+                    </span>
+                    <span style="display:flex;align-items:center;gap:8px;">
+                        <span class="count">${diff.children.length} 题</span>
+                        <span class="toggle-icon">▼</span>
+                    </span>
+                `;
+
+                const questionList = document.createElement('div');
+                questionList.className = 'question-list';
+
+                diffHeader.addEventListener('click', () => {
+                    diffHeader.classList.toggle('collapsed');
+                    questionList.classList.toggle('hidden');
+                });
+
+                diff.children.forEach((q, qi) => {
+                    const item = document.createElement('div');
+                    item.className = 'question-item';
+                    item.innerHTML = `
+                        <span class="q-index">${qi + 1}</span>
+                        <div class="q-text">
+                            <div class="q-summary">${q.name}</div>
+                            <div class="q-full">${q.fullContent}</div>
+                        </div>
+                    `;
+                    item.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        item.classList.toggle('expanded');
+                    });
+                    questionList.appendChild(item);
+                });
+
+                diffContainer.appendChild(diffHeader);
+                diffContainer.appendChild(questionList);
+            });
+
+            branch.appendChild(techHeader);
+            branch.appendChild(diffContainer);
+            root.appendChild(branch);
+        });
+    }
+
+    loadTree();
+</script>
+</body>
+</html>

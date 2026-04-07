@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 面试官</title>
+    <script src="marked.umd.js"></script>
+    
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: #f0f2f5;
+            height: 100vh;
+        }
+        .page { display: none; height: 100vh; flex-direction: column; }
+        .page.active { display: flex; }
+
+        /* Header */
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 16px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        }
+        .header h1 { font-size: 20px; font-weight: 600; }
+        .header-actions { display: flex; gap: 12px; align-items: center; }
+        .status { font-size: 13px; opacity: 0.9; }
+        .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: #4ade80; }
+        .status-dot.offline { background: #f87171; }
+        .btn-header {
+            background: rgba(255,255,255,0.2);
+            border: 1px solid rgba(255,255,255,0.3);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.2s;
+        }
+        .btn-header:hover { background: rgba(255,255,255,0.3); }
+
+        /* Start Page */
+        .start-page {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            justify-content: center;
+            align-items: center;
+        }
+        .start-card {
+            background: white;
+            border-radius: 16px;
+            padding: 40px;
+            width: 480px;
+            max-width: 90vw;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        .start-card h2 {
+            font-size: 24px;
+            color: #1e293b;
+            margin-bottom: 8px;
+        }
+        .start-card .subtitle {
+            color: #64748b;
+            font-size: 14px;
+            margin-bottom: 32px;
+        }
+        .form-group {
+            margin-bottom: 24px;
+        }
+        .form-group label {
+            display: block;
+            font-size: 14px;
+            font-weight: 500;
+            color: #334155;
+            margin-bottom: 8px;
+        }
+        .form-group label .required {
+            color: #ef4444;
+            margin-left: 2px;
+        }
+        .form-group select {
+            width: 100%;
+            padding: 10px 14px;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 15px;
+            outline: none;
+            background: white;
+            cursor: pointer;
+            transition: border-color 0.2s;
+        }
+        .form-group select:focus { border-color: #667eea; }
+
+        .upload-area {
+            border: 2px dashed #e2e8f0;
+            border-radius: 8px;
+            padding: 24px;
+            text-align: center;
+            cursor: pointer;
+            transition: border-color 0.2s, background 0.2s;
+        }
+        .upload-area:hover { border-color: #667eea; background: #f8fafc; }
+        .upload-area.has-file { border-color: #4ade80; background: #f0fdf4; }
+        .upload-area input { display: none; }
+        .upload-area .upload-icon { font-size: 32px; margin-bottom: 8px; }
+        .upload-area .upload-text { color: #64748b; font-size: 14px; }
+        .upload-area .upload-text strong { color: #667eea; }
+        .upload-area .file-name { color: #16a34a; font-size: 14px; font-weight: 500; }
+
+        .mode-selection {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+        .mode-card {
+            flex: 1;
+            padding: 16px;
+            border: 2px solid #e2e8f0;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-align: center;
+            background: white;
+        }
+        .mode-card:hover { border-color: #667eea; }
+        .mode-card.selected { border-color: #667eea; background: linear-gradient(135deg, rgba(102,126,234,0.1) 0%, rgba(118,75,162,0.1) 100%); }
+        .mode-icon { font-size: 28px; margin-bottom: 8px; }
+        .mode-title { font-size: 15px; font-weight: 600; color: #1e293b; margin-bottom: 4px; }
+        .mode-desc { font-size: 12px; color: #64748b; line-height: 1.4; }
+
+        .btn-start {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+        .btn-start:hover { opacity: 0.9; }
+        .btn-start:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        /* Chat Page */
+        .chat-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .message {
+            max-width: 88%;
+            padding: 12px 18px;
+            border-radius: 12px;
+            line-height: 1.6;
+            font-size: 14px;
+            word-wrap: break-word;
+            white-space: normal;
+        }
+        .message.user {
+            align-self: flex-end;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-bottom-right-radius: 4px;
+        }
+        .message.ai {
+            align-self: flex-start;
+            background: white;
+            color: #333;
+            border-bottom-left-radius: 4px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .message.error {
+            align-self: center;
+            background: #fee2e2;
+            color: #dc2626;
+            max-width: 90%;
+        }
+        .typing-indicator {
+            align-self: flex-start;
+            background: white;
+            padding: 12px 20px;
+            border-radius: 12px;
+            border-bottom-left-radius: 4px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            display: none;
+        }
+        .typing-indicator.show { display: flex; gap: 4px; }
+        .typing-indicator span {
+            width: 8px; height: 8px;
+            background: #94a3b8;
+            border-radius: 50%;
+            animation: bounce 1.4s infinite ease-in-out;
+        }
+        .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+        .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes bounce {
+            0%, 80%, 100% { transform: translateY(0); }
+            40% { transform: translateY(-8px); }
+        }
+        .input-area {
+            background: white;
+            padding: 16px 24px;
+            display: flex;
+            gap: 12px;
+            box-shadow: 0 -2px 8px rgba(0,0,0,0.08);
+        }
+        .input-area textarea {
+            flex: 1;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 12px 16px;
+            font-size: 15px;
+            resize: none;
+            outline: none;
+            font-family: inherit;
+            transition: border-color 0.2s;
+            min-height: 48px;
+            max-height: 120px;
+        }
+        .input-area textarea:focus { border-color: #667eea; }
+        .btn-send {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 12px 24px;
+            font-size: 15px;
+            cursor: pointer;
+            transition: opacity 0.2s;
+            white-space: nowrap;
+        }
+        .btn-send:hover { opacity: 0.9; }
+        .btn-send:disabled { opacity: 0.5; cursor: not-allowed; }
+        .session-info {
+            padding: 8px 24px;
+            background: #f8fafc;
+            font-size: 12px;
+            color: #94a3b8;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        .session-info span { color: #667eea; font-weight: 500; }
+        .btn-learn {
+            align-self: flex-start;
+            margin-top: -8px;
+            margin-bottom: 8px;
+            padding: 8px 20px;
+            border: 2px solid #667eea;
+            background: linear-gradient(135deg, rgba(102,126,234,0.08) 0%, rgba(118,75,162,0.08) 100%);
+            color: #667eea;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn-learn:hover { background: linear-gradient(135deg, rgba(102,126,234,0.2) 0%, rgba(118,75,162,0.2) 100%); }
+        .btn-learn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        .message.ai h1, .message.ai h2, .message.ai h3, .message.ai h4 {
+            margin: 6px 0 2px;
+            color: #1e293b;
+            line-height: 1.4;
+        }
+        .message.ai h1 { font-size: 16px; }
+        .message.ai h2 { font-size: 15px; }
+        .message.ai h3 { font-size: 14.5px; }
+        .message.ai h4 { font-size: 14px; }
+        .message.ai p { margin: 2px 0; line-height: 1.65; }
+        .message.ai ul, .message.ai ol { margin: 2px 0; padding-left: 18px; }
+        .message.ai li { line-height: 1.65; margin: 1px 0; }
+        .message.ai code {
+            background: #f1f5f9;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 13px;
+            font-family: Consolas, Monaco, "Courier New", monospace;
+        }
+        .message.ai pre {
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 10px 14px;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin: 4px 0;
+        }
+        .message.ai pre code {
+            background: none;
+            padding: 0;
+            font-size: 13px;
+            color: inherit;
+        }
+        .message.ai blockquote {
+            border-left: 3px solid #667eea;
+            padding-left: 10px;
+            margin: 4px 0;
+            color: #64748b;
+        }
+        .message.ai table {
+            border-collapse: collapse;
+            margin: 4px 0;
+            width: 100%;
+        }
+        .message.ai th, .message.ai td {
+            border: 1px solid #e2e8f0;
+            padding: 4px 10px;
+            text-align: left;
+        }
+        .message.ai th { background: #f8fafc; font-weight: 600; }
+    </style>
+</head>
+<body>
+
+<!-- Start Page -->
+<div class="page start-page active" id="startPage">
+    <div class="start-card">
+        <h2>AI 技术面试官</h2>
+        <p class="subtitle">选择面试模式，开始你的练习之旅</p>
+
+        <div class="mode-selection">
+            <div class="mode-card selected" data-mode="learning" onclick="selectMode('learning')">
+                <div class="mode-icon">📚</div>
+                <div class="mode-title">学习模式</div>
+                <div class="mode-desc">轻松练习，随时获取提示和反馈</div>
+            </div>
+            <div class="mode-card" data-mode="simulation" onclick="selectMode('simulation')">
+                <div class="mode-icon">🎯</div>
+                <div class="mode-title">拟真模式</div>
+                <div class="mode-desc">模拟真实面试场景，紧张氛围，限时回答</div>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label>技术栈方向 <span class="required">*</span></label>
+            <select id="techStack">
+                <option value="">请选择技术栈</option>
+            </select>
+        </div>
+
+        <div class="form-group" id="positionGroup" style="display:none">
+            <label>应聘岗位 <span class="required">*</span></label>
+            <select id="position">
+                <option value="">请选择岗位</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label>面试难度</label>
+            <select id="difficulty">
+                <option value="basic">初级</option>
+                <option value="medium" selected>中级</option>
+                <option value="hard">高级</option>
+            </select>
+        </div>
+
+        <div class="form-group" id="styleGroup" style="display:none">
+            <label>面试官风格</label>
+            <select id="interviewStyle">
+                <option value="professional" selected>专业型</option>
+                <option value="friendly">友好型</option>
+                <option value="strict">严格型</option>
+            </select>
+        </div>
+
+        <div class="form-group" id="resumeGroup" style="display:none">
+            <label>上传简历 <span style="color:#94a3b8;font-weight:400">(可选)</span></label>
+            <div class="upload-area" id="uploadArea" onclick="document.getElementById('resumeFile').click()">
+                <input type="file" id="resumeFile" accept=".pdf,.doc,.docx,.txt" onchange="handleFileSelect(this)">
+                <div class="upload-icon" id="uploadIcon">📄</div>
+                <div class="upload-text" id="uploadText">
+                    点击上传或拖拽文件到此处<br>
+                    <strong>支持 PDF、DOC、DOCX、TXT</strong>
+                </div>
+            </div>
+        </div>
+
+        <button class="btn-start" id="btnStart" onclick="startInterview()">开始面试</button>
+    </div>
+</div>
+<div class="page" id="chatPage">
+    <div class="header">
+        <h1>AI 技术面试官</h1>
+        <div class="header-actions">
+            <span class="status">
+                <span class="status-dot" id="statusDot"></span>
+                <span id="statusText">已连接</span>
+            </span>
+            <button class="btn-header" onclick="backToStart()">返回</button>
+            <button class="btn-header" onclick="resetInterview()">重新开始</button>
+        </div>
+    </div>
+    <div class="session-info" id="sessionInfo"></div>
+    <div class="chat-container" id="chatContainer">
+        <div class="typing-indicator" id="typingIndicator">
+            <span></span><span></span><span></span>
+        </div>
+    </div>
+    <div class="input-area">
+        <textarea id="messageInput" placeholder="输入消息... (Enter 发送, Shift+Enter 换行)" rows="1"></textarea>
+        <button class="btn-send" id="sendBtn" onclick="sendMessage()">发送</button>
+    </div>
+</div>
+
+<script>
+    const API_BASE = '';
+    let sessionId = null;
+    let isSending = false;
+    let selectedFile = null;
+    let selectedMode = 'learning';
+
+    // Elements
+    const startPage = document.getElementById('startPage');
+    const chatPage = document.getElementById('chatPage');
+    const techStack = document.getElementById('techStack');
+    const position = document.getElementById('position');
+    const difficulty = document.getElementById('difficulty');
+    const interviewStyle = document.getElementById('interviewStyle');
+    const chatContainer = document.getElementById('chatContainer');
+    const messageInput = document.getElementById('messageInput');
+    const sendBtn = document.getElementById('sendBtn');
+    const typingIndicator = document.getElementById('typingIndicator');
+    const statusDot = document.getElementById('statusDot');
+    const statusText = document.getElementById('statusText');
+    const sessionInfo = document.getElementById('sessionInfo');
+    const uploadArea = document.getElementById('uploadArea');
+    const uploadText = document.getElementById('uploadText');
+    const uploadIcon = document.getElementById('uploadIcon');
+
+    // Load options on start
+    const FALLBACK_STACKS = ["Java", "Python", "Go", "JavaScript/TypeScript", "C++", "Rust"];
+    const FALLBACK_POSITIONS = ["后端开发", "前端开发", "全栈开发", "算法工程师", "大数据开发", "测试开发"];
+
+    async function loadOptions() {
+        let stacks = FALLBACK_STACKS;
+        let positions = FALLBACK_POSITIONS;
+        try {
+            const res = await fetch(`${API_BASE}/options`);
+            if (res.ok) {
+                const data = await res.json();
+                if (data.tech_stacks?.length) stacks = data.tech_stacks;
+                if (data.positions?.length) positions = data.positions;
+            }
+        } catch (e) {
+            console.warn('API unavailable, using fallback options:', e);
+        }
+        stacks.forEach(s => {
+            const opt = document.createElement('option');
+            opt.value = s; opt.textContent = s;
+            techStack.appendChild(opt);
+        });
+        positions.forEach(p => {
+            const opt = document.createElement('option');
+            opt.value = p; opt.textContent = p;
+            position.appendChild(opt);
+        });
+    }
+
+    function handleFileSelect(input) {
+        if (input.files.length > 0) {
+            selectedFile = input.files[0];
+            uploadArea.classList.add('has-file');
+            uploadIcon.textContent = '✅';
+            uploadText.innerHTML = `<div class="file-name">${selectedFile.name}</div>`;
+        }
+    }
+
+    function selectMode(mode) {
+        selectedMode = mode;
+        document.querySelectorAll('.mode-card').forEach(card => {
+            card.classList.toggle('selected', card.dataset.mode === mode);
+        });
+        const isSim = mode === 'simulation';
+        document.getElementById('positionGroup').style.display = isSim ? '' : 'none';
+        document.getElementById('styleGroup').style.display = isSim ? '' : 'none';
+        document.getElementById('resumeGroup').style.display = isSim ? '' : 'none';
+        const btn = document.getElementById('btnStart');
+        btn.textContent = mode === 'learning' ? '开始学习' : '开始面试';
+    }
+
+    async function startInterview() {
+        const stack = techStack.value;
+        const pos = position.value;
+        if (!stack || (selectedMode === 'simulation' && !pos)) {
+            alert('请选择技术栈和岗位');
+            return;
+        }
+
+        const btn = document.getElementById('btnStart');
+        btn.disabled = true;
+        btn.textContent = '正在准备...';
+
+        try {
+            if (selectedFile) {
+                const formData = new FormData();
+                formData.append('file', selectedFile);
+                await fetch(`${API_BASE}/upload/resume`, { method: 'POST', body: formData });
+            }
+
+            const diff = difficulty.value;
+            const style = interviewStyle.options[interviewStyle.selectedIndex].text;
+            const res = await fetch(`${API_BASE}/interview`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ tech_stack: [stack], position: pos, difficulty: diff, style: style, resume_filename: selectedFile?.name, mode: 'dual_agent', ui_mode: selectedMode })
+            });
+            const data = await res.json();
+
+            if (!res.ok) {
+                throw new Error(data.detail || `请求失败 (${res.status})`);
+            }
+
+            sessionId = data.session_id;
+
+            const diffLabel = difficulty.options[difficulty.selectedIndex].text;
+            const modeLabel = selectedMode === 'simulation' ? '拟真模式' : '学习模式';
+            let infoHtml = `模式: <span>${modeLabel}</span> &nbsp;|&nbsp; 技术栈: <span>${stack}</span> &nbsp;|&nbsp; 难度: <span>${diffLabel}</span>`;
+            if (selectedMode === 'simulation') {
+                infoHtml += ` &nbsp;|&nbsp; 岗位: <span>${pos}</span> &nbsp;|&nbsp; 风格: <span>${style}</span>`;
+            }
+            sessionInfo.innerHTML = infoHtml;
+            startPage.classList.remove('active');
+            chatPage.classList.add('active');
+
+            if (data.reply) {
+                addMessage(data.reply, 'ai');
+            }
+
+            if (selectedMode === 'learning') {
+                addLearnButton();
+            }
+        } catch (e) {
+            alert('启动失败: ' + e.message);
+        } finally {
+            btn.disabled = false;
+            btn.textContent = selectedMode === 'learning' ? '开始学习' : '开始面试';
+        }
+    }
+
+    function backToStart() {
+        if (sessionId) {
+            fetch(`${API_BASE}/session/reset`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ session_id: sessionId, message: '' })
+            }).catch(() => {});
+        }
+        sessionId = null;
+        chatContainer.querySelectorAll('.message').forEach(el => el.remove());
+        chatPage.classList.remove('active');
+        startPage.classList.add('active');
+    }
+
+    messageInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+    });
+    messageInput.addEventListener('input', () => {
+        messageInput.style.height = 'auto';
+        messageInput.style.height = Math.min(messageInput.scrollHeight, 120) + 'px';
+    });
+
+    function addMessage(text, type) {
+        const div = document.createElement('div');
+        div.className = `message ${type}`;
+        
+        const isLearningQuestion = type === 'ai' && text.includes('**') && (text.includes('你了解这个知识点') || text.includes('请简单说说'));
+        
+        if (isLearningQuestion) {
+            const parts = text.split(/\n\n+/);
+            parts.forEach((part, idx) => {
+                const partSpan = document.createElement('span');
+                partSpan.style.display = 'block';
+                
+                const boldMatch = part.match(/^\*\*([\s\S]+?)\*\*$/);
+                if (boldMatch) {
+                    partSpan.innerHTML = `<strong style="font-size:18px;color:#1e293b;font-weight:700;">${boldMatch[1]}</strong>`;
+                } else if (part.includes('你了解这个知识点') || part.includes('请简单说说') || part.includes('如果不了解') || part.includes('让我们来学习') || part.includes('知识点吧')) {
+                    partSpan.innerHTML = `<span style="color:#94a3b8;font-size:13px;">${part}</span>`;
+                } else {
+                    partSpan.innerHTML = marked.parse(part);
+                }
+                
+                if (idx > 0) partSpan.style.marginTop = '8px';
+                div.appendChild(partSpan);
+            });
+        } else if (type === 'ai') {
+            div.innerHTML = marked.parse(text);
+        } else {
+            div.textContent = text;
+        }
+        
+        chatContainer.insertBefore(div, typingIndicator);
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
+
+    function showTyping(show) {
+        typingIndicator.classList.toggle('show', show);
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
+
+    function addLearnButton() {
+        const btn = document.createElement('button');
+        btn.className = 'btn-learn';
+        btn.id = 'btnLearn';
+        btn.textContent = '学习一下';
+        btn.onclick = () => requestExplain(btn);
+        chatContainer.insertBefore(btn, typingIndicator);
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
+
+    async function requestExplain(btn) {
+        btn.disabled = true;
+        btn.textContent = '正在讲解...';
+        showTyping(true);
+
+        try {
+            const res = await fetch(`${API_BASE}/interview`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ message: '__explain__', session_id: sessionId })
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err.detail || `请求失败 (${res.status})`);
+            }
+            const data = await res.json();
+            if (data.session_id) sessionId = data.session_id;
+            addMessage(data.reply, 'ai');
+            btn.remove();
+        } catch (e) {
+            addMessage(`出错了: ${e.message}`, 'error');
+            btn.disabled = false;
+            btn.textContent = '学习一下';
+        } finally {
+            showTyping(false);
+        }
+    }
+
+    async function sendMessage() {
+        const text = messageInput.value.trim();
+        if (!text || isSending) return;
+
+        isSending = true;
+        sendBtn.disabled = true;
+        messageInput.value = '';
+        messageInput.style.height = 'auto';
+
+        addMessage(text, 'user');
+        showTyping(true);
+
+        try {
+            const endpoint = `${API_BASE}/interview`;
+            const body = { message: text, session_id: sessionId };
+
+            const res = await fetch(endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err.detail || `请求失败 (${res.status})`);
+            }
+
+            const data = await res.json();
+            if (data.session_id) sessionId = data.session_id;
+            addMessage(data.reply, 'ai');
+        } catch (e) {
+            addMessage(`出错了: ${e.message}`, 'error');
+            statusDot.classList.add('offline');
+            statusText.textContent = '连接异常';
+        } finally {
+            showTyping(false);
+            isSending = false;
+            sendBtn.disabled = false;
+            messageInput.focus();
+        }
+    }
+
+    async function resetInterview() {
+        if (sessionId) {
+            await fetch(`${API_BASE}/session/reset`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ session_id: sessionId, message: '' })
+            }).catch(() => {});
+        }
+        sessionId = null;
+        chatContainer.querySelectorAll('.message').forEach(el => el.remove());
+        backToStart();
+    }
+
+    loadOptions();
+    selectMode('learning');
+</script>
+</body>
+</html>

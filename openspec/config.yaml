@@ -1,0 +1,42 @@
+schema: spec-driven
+
+context: |
+  技术栈: Python 3.10+, FastAPI, LangChain, LangGraph, Ollama (deepseek-r1:8b), PostgreSQL (psycopg2), HTML/CSS/JavaScript
+  领域: AI 驱动的技术面试模拟平台
+  语言: 项目代码和提示词均使用中文
+  架构模式:
+    - 双 Agent 架构: Manager Agent（流程管理）+ Interviewer Agent（面试执行）
+    - 可插拔技能系统: InterviewSkill 抽象基类 + Registry 注册模式
+    - 写穿透缓存: 内存缓存 + PostgreSQL 持久化
+    - 线程安全: threading.Lock 保护共享状态
+  核心模块:
+    - agents/: Agent 定义（Manager、Interviewer、ModelFactory）
+    - service/: 业务逻辑（interview、dual_agent_service、orchestrator、config、question_manager）
+    - prompt/: 系统提示词模板（initialization、manager）
+    - skills/: 可插拔面试技能（simulation 拟真模式、learning 学习模式）
+    - tools/: LangChain 工具（file_reader 文件读取）
+    - db/: PostgreSQL 数据层（connection 连接池、repository CRUD、schema DDL）
+    - web/: FastAPI API 路由
+    - frontend/: 前端页面
+  面试模式:
+    - simulation（拟真模式）: 不提供答案，严格评分，追问上限 3 次
+    - learning（学习模式）: 提供参考答案，教学导向，追问上限 5 次
+    - dual_agent（双 Agent 模式）: Manager 管理流程，Interviewer 执行面试
+  面试风格: professional（专业严谨）、friendly（亲和友好）、challenging（压力挑战）、scenario（场景实战）、growth（潜力评估）
+  面试流程（四阶段）: 基础知识考察 → 项目经历考察 → 岗位需求考察 → 面试总结
+  数据库: PostgreSQL (localhost:5432/interview)，5 连接池
+  LLM: Ollama (127.0.0.1:11434)，模型 deepseek-r1:8b
+  Web API 端口: 8003
+  代码规范: ruff lint (E, F, I)，pyright 类型检查
+
+rules:
+  proposal:
+    - 提案使用中文撰写
+    - 包含"非目标"章节
+    - 提案控制在 800 字以内
+  tasks:
+    - 任务拆分为不超过 2 小时的粒度
+    - 每个任务需明确涉及的具体文件和模块
+    - 修改 Python 代码时遵循 ruff lint 规范（E, F, I）
+    - 修改提示词时保持中文
+    - 涉及数据库变更时需同步更新 schema.py
