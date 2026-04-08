@@ -1,7 +1,15 @@
+import warnings
 from pathlib import Path
 from langchain_core.tools import tool
 
 from db.repository import QuestionBankRepository
+
+warnings.warn(
+    "tools/file_reader.py 已弃用，请使用 tools/tool_factory.py 中的 "
+    "create_session_tools() 工厂函数。",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 SKILLS_DIR = Path(__file__).resolve().parent.parent / "skills" / "interviewManager"
 

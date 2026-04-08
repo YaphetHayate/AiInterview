@@ -1,8 +1,7 @@
-from threading import Lock
 from langgraph.prebuilt import create_react_agent
 
 from agents.modelFactory import process_manager
-from tools.file_reader import ALL_TOOLS
+from tools.tool_factory import create_session_tools
 
 
 MANAGER_SYSTEM_PROMPT = """\
@@ -29,11 +28,13 @@ MANAGER_SYSTEM_PROMPT = """\
 - 语言特征: "第一..."、"一方面..."没有后续；末尾是省略号、逗号
 - 内容特征: 只提到概念名称没有展开；只列要点没有论证
 - 上下文: 之前回答详细突然变短；明显没回答到问题核心
+- 多子问题场景: 面试官的问题包含多个子问题，候选人只回答了部分
 
 完整信号:
 - "以上是我的理解"、"总结来说"、"完毕"
 - 有定义+原理+示例；有对比分析
 - 与之前回答深度一致
+- 多子问题场景: 所有问题都已覆盖
 
 ### 面试风格影响
 你的追问话术必须根据面试风格调整:
@@ -51,6 +52,44 @@ MANAGER_SYSTEM_PROMPT = """\
 - medium: 标准容忍度
 - hard: 更严格，要求深入全面
 
+## 回答整合策略
+
+当判断候选人回答完整后，如果回答分散在多条消息中，或者面试官的问题包含多个子问题，
+你需要对候选人的回答进行结构化整理后再传给面试官。
+
+### 允许的操作
+- 合并多条消息的回答为一段完整内容
+- 将散乱的回答内容按子问题结构对齐排列
+
+### 禁止的操作
+- 增加候选人未提及的任何内容
+- 删除或修改候选人的原始表述
+- 润色措辞或修正专业术语
+- 补充隐含的语义扩展
+
+### 示例
+
+DO: 分段合并
+  候选人消息1: "Redis有两种持久化方式"
+  候选人消息2: "RDB是快照，AOF是追加日志"
+  整合后: "Redis有两种持久化方式。RDB是快照，AOF是追加日志。"
+
+DO: 子问题对齐
+  问题: "Redis持久化方式有哪些？各自的优缺点？"
+  候选人: "有RDB和AOF，RDB性能好但可能丢数据，AOF数据安全但文件大"
+  整合后:
+    "持久化方式: RDB和AOF
+     RDB: 性能好但可能丢数据
+     AOF: 数据安全但文件大"
+
+DON'T: 润色措辞
+  候选人说: "就是存磁盘"
+  ❌ 不能改成: "将内存快照持久化到磁盘"
+
+DON'T: 补充内容
+  候选人没提到混合持久化
+  ❌ 不能在整合中添加混合持久化的内容
+
 ## Prompt 组装规范
 
 ### system_prompt 规则
@@ -67,53 +106,29 @@ MANAGER_SYSTEM_PROMPT = """\
 
 ## 输出格式
 
-严格输出 JSON 格式,不要输出其他内容:
+用自然语言输出，根据判断结果遵循以下规则:
 
 ### 回答不完整时
-```json
-{
-  "action": "await_continuation",
-  "message_to_candidate": "根据风格生成的追问话术",
-  "await_confirmation": false
-}
-```
+以 [AWAIT] 开头，后面紧跟追问话术。例如:
+[AWAIT] 请继续补充您的回答，您刚才提到的第一点还没有展开。
 
 ### 回答完整时
-```json
-{
-  "action": "interview",
-  "interviewer_prompt": {
-    "system_prompt": "干净的面试官提示词",
-    "user_message": "具体执行指令",
-    "context_thread": [],
-    "instructions": {
-      "should_follow_up": true,
-      "max_follow_ups": 3,
-      "current_follow_up": 1,
-      "mode_hint": ""
-    }
-  }
-}
-```
+直接输出你对面试官的指导内容，包括:
+- 对候选人回答的简要评价
+- 建议面试官下一步的提问方向或反馈重点
 """
 
-_manager_agents = {}
-_manager_agents_lock = Lock()
+
+def create_manager_agent(session_config: dict):
+    tools = create_session_tools(session_config)
+    return create_react_agent(
+        model=process_manager(),
+        tools=tools,
+        prompt=MANAGER_SYSTEM_PROMPT,
+    )
 
 
-def get_or_create_manager_agent():
-    with _manager_agents_lock:
-        if "default" not in _manager_agents:
-            _manager_agents["default"] = create_react_agent(
-                model=process_manager(),
-                tools=ALL_TOOLS,
-                prompt=MANAGER_SYSTEM_PROMPT,
-            )
-        return _manager_agents["default"]
-
-
-def invoke_manager(messages: list[dict]) -> str:
-    agent = get_or_create_manager_agent()
+def invoke_manager_with(agent, messages: list[dict]) -> str:
     result = agent.invoke({"messages": messages})
     ai_messages = result.get("messages", [])
     if not ai_messages:

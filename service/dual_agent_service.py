@@ -1,13 +1,11 @@
-import json
 import logging
-import re
 from pathlib import Path
 from threading import Lock
 from typing import Optional
 from uuid import uuid4
 
 from agents.interviewer_agent import invoke_interviewer
-from agents.manager_agent import invoke_manager
+from agents.manager_agent import MANAGER_SYSTEM_PROMPT, create_manager_agent, invoke_manager_with
 from db.repository import QuestionBankRepository
 from prompt.initialization import get_system_prompt
 from service.config import InterviewConfig
@@ -41,6 +39,8 @@ MODE_CONFIG = {
     },
 }
 
+INJECT_CONFIG_IN_MESSAGE = False
+
 
 def _get_prompt_logger(session_id: str) -> logging.Logger:
     logger_name = f"prompt_debug.{session_id}"
@@ -61,17 +61,34 @@ def _get_prompt_logger(session_id: str) -> logging.Logger:
     return logger
 
 
-def _log(logger: logging.Logger, tag: str, **kwargs) -> None:
-    parts = [f"[{tag}]"]
-    for k, v in kwargs.items():
-        text = str(v)
-        if len(text) > 300:
-            text = text[:300] + "..."
-        parts.append(f"{k}={text}")
-    logger.info(" ".join(parts))
+def _log_section(
+    logger: logging.Logger, tag: str, meta: str = "", content: str = ""
+) -> None:
+    header = tag if not meta else f"{tag} ({meta})"
+    sep = "\u2550" * 64
+    logger.info(
+        "\n\u2554%s\n\u2551 %s\n\u255a%s\n%s",
+        sep,
+        header,
+        sep,
+        content,
+    )
+
+
+def _build_session_config(config: InterviewConfig) -> dict:
+    return {
+        "tech_stack": ", ".join(config.tech_stack),
+        "difficulty": config.difficulty,
+        "interview_style": config.interview_style,
+        "position": config.position,
+        "mode": config.mode,
+        "resume_info": config.resume_info,
+    }
 
 
 def _create_session(config: InterviewConfig, session_id: str) -> dict:
+    session_config = _build_session_config(config)
+    manager_agent = create_manager_agent(session_config)
     return {
         "session_id": session_id,
         "mode": config.mode,
@@ -82,6 +99,8 @@ def _create_session(config: InterviewConfig, session_id: str) -> dict:
         "interview_style": config.interview_style,
         "difficulty": config.difficulty,
         "resume_info": config.resume_info,
+        "config": session_config,
+        "manager_agent": manager_agent,
         "questions": [],
         "current_question_idx": -1,
         "pending_buffer": [],
@@ -103,17 +122,25 @@ def _fetch_questions(session: dict, limit: int = 5) -> list[dict]:
 
 
 def _build_manager_start_message(session: dict) -> str:
-    return (
-        f"面试配置信息：\n"
-        f"- 岗位：{session['position']}\n"
-        f"- 技术栈：{session['tech_stack']}\n"
-        f"- 面试风格：{session['interview_style']}\n"
-        f"- 难度：{session['difficulty']}\n"
-        f"- 面试模式：{session['mode']}\n\n"
-        f"请先调用 read_skill_md 读取面试流程技能文件，理解完整流程。\n"
-        f"然后调用 read_stage_file(1) 读取阶段1的指引。\n\n"
-        f"候选人说：开始面试"
-    )
+    parts = [
+        "面试即将开始。",
+        "请先调用 read_session_config 获取当前面试配置。",
+        "然后调用 read_skill_md 读取面试流程技能文件，理解完整流程。",
+        "接着调用 read_stage_file(1) 读取阶段1的指引。",
+        "最后组装提示词给面试官，开始阶段1的面试。",
+        "\n候选人说：开始面试",
+    ]
+    if INJECT_CONFIG_IN_MESSAGE:
+        parts.insert(
+            1,
+            f"\n面试配置信息：\n"
+            f"- 岗位：{session['position']}\n"
+            f"- 技术栈：{session['tech_stack']}\n"
+            f"- 面试风格：{session['interview_style']}\n"
+            f"- 难度：{session['difficulty']}\n"
+            f"- 面试模式：{session['mode']}\n",
+        )
+    return "\n".join(parts)
 
 
 def _build_manager_chat_message(
@@ -130,14 +157,20 @@ def _build_manager_chat_message(
 
     parts = [
         "当前面试状态：",
-        f"- 面试模式：{session['mode']}",
-        f"- 面试风格：{session['interview_style']}",
-        f"- 难度：{session['difficulty']}",
         f"- 当前阶段：{session['stage']}（{session['stage_name']}）",
         f"- 当前阶段已交互次数：{session['exchange_count']}",
         f"- 最大追问次数：{mode_cfg['max_follow_ups']}",
         f"- mode_hint：{mode_cfg['mode_hint'] or '（无）'}",
     ]
+
+    if INJECT_CONFIG_IN_MESSAGE:
+        parts.extend([
+            f"- 面试模式：{session['mode']}",
+            f"- 面试风格：{session['interview_style']}",
+            f"- 难度：{session['difficulty']}",
+        ])
+    else:
+        parts.append("（如需面试配置信息，请调用 read_session_config）")
 
     if current_q:
         parts.append(f"\n当前问题：{current_q['content']}")
@@ -156,9 +189,15 @@ def _build_manager_stage_advance_message(session: dict, next_stage: int) -> str:
         f"阶段 {session['stage']}（{session['stage_name']}）已完成。",
         f"请调用 read_stage_file({next_stage}) 读取阶段 {next_stage}（{stage_name}）的指引文件。",
         f"然后组装提示词给面试官，开始阶段 {next_stage} 的面试。",
-        f"\n面试配置：岗位 {session['position']}，技术栈 {session['tech_stack']}",
-        f"模式：{session['mode']}，风格：{session['interview_style']}",
     ]
+
+    if INJECT_CONFIG_IN_MESSAGE:
+        parts.append(
+            f"\n面试配置：岗位 {session['position']}，技术栈 {session['tech_stack']}"
+            f"，模式：{session['mode']}，风格：{session['interview_style']}"
+        )
+    else:
+        parts.append("（如需面试配置信息，请调用 read_session_config）")
 
     if session["stage_summaries"]:
         parts.append("\n之前阶段摘要：")
@@ -173,10 +212,17 @@ def _build_manager_summary_message(session: dict) -> str:
         "面试已进入总结阶段（阶段4）。",
         "请调用 read_stage_file(4) 读取总结阶段的指引文件。",
         "然后基于以下信息生成综合评价报告。",
-        f"\n面试配置：岗位 {session['position']}，技术栈 {session['tech_stack']}",
-        f"模式：{session['mode']}",
-        "\n各阶段摘要：",
     ]
+
+    if INJECT_CONFIG_IN_MESSAGE:
+        parts.append(
+            f"\n面试配置：岗位 {session['position']}，技术栈 {session['tech_stack']}"
+            f"，模式：{session['mode']}"
+        )
+    else:
+        parts.append("（如需面试配置信息，请调用 read_session_config）")
+
+    parts.append("\n各阶段摘要：")
     for i, s in enumerate(session["stage_summaries"]):
         parts.append(f"阶段{i + 1}（{STAGE_NAMES.get(i + 1, '')}）: {s}")
 
@@ -196,7 +242,7 @@ def _build_manager_question_summary_message(
     parts = [
         f"当前问题已完成：{question['content']}",
         f"追问次数：{question.get('follow_up_count', 0)}",
-        f"对话记录：",
+        "对话记录：",
     ]
     for msg in question.get("thread", []):
         role = msg.get("role", "")
@@ -209,42 +255,16 @@ def _build_manager_question_summary_message(
     return "\n".join(parts)
 
 
-def _parse_manager_response(response_text: str) -> dict:
-    json_match = re.search(r"\{[\s\S]*\}", response_text)
-    if json_match:
-        try:
-            result = json.loads(json_match.group())
-            action = result.get("action", "interview")
-            if action == "await_continuation":
-                return {
-                    "action": "await_continuation",
-                    "message_to_candidate": result.get(
-                        "message_to_candidate",
-                        "请继续补充您的回答。",
-                    ),
-                    "await_confirmation": result.get("await_confirmation", False),
-                }
-            return {
-                "action": "interview",
-                "interviewer_prompt": result.get("interviewer_prompt", {}),
-            }
-        except json.JSONDecodeError:
-            pass
+_AWAIT_PREFIX = "[AWAIT]"
 
-    return {
-        "action": "interview",
-        "interviewer_prompt": {
-            "system_prompt": "",
-            "user_message": response_text,
-            "context_thread": [],
-            "instructions": {
-                "should_follow_up": True,
-                "max_follow_ups": 3,
-                "current_follow_up": 0,
-                "mode_hint": "",
-            },
-        },
-    }
+
+def _is_await_continuation(response: str) -> bool:
+    return response.strip().startswith(_AWAIT_PREFIX)
+
+
+def _extract_await_message(response: str) -> str:
+    message = response.strip()[len(_AWAIT_PREFIX):].strip()
+    return message or "请继续补充您的回答。"
 
 
 def _get_context_thread(session: dict) -> list[dict]:
@@ -333,6 +353,10 @@ def _advance_to_next_question(session: dict) -> bool:
     return False
 
 
+def _invoke_session_manager(session: dict, messages: list[dict]) -> str:
+    return invoke_manager_with(session["manager_agent"], messages)
+
+
 def _advance_stage(session: dict, logger: logging.Logger) -> bool:
     current = session["stage"]
     if current >= 4:
@@ -344,7 +368,7 @@ def _advance_stage(session: dict, logger: logging.Logger) -> bool:
         last_q = session["questions"][session["current_question_idx"]]
         msg = _build_manager_question_summary_message(session, last_q)
         session["manager_history"].append({"role": "user", "content": msg})
-        summary = invoke_manager(session["manager_history"])
+        summary = _invoke_session_manager(session, session["manager_history"])
         session["manager_history"].append(
             {"role": "assistant", "content": summary}
         )
@@ -366,8 +390,21 @@ def _advance_stage(session: dict, logger: logging.Logger) -> bool:
     session["current_question_idx"] = -1
     session["exchange_count"] = 0
 
-    _log(logger, "STAGE_ADVANCE", from_stage=current, to_stage=next_stage)
+    _log_section(
+        logger, "[FLOW] Stage Advance",
+        content=f"from_stage={current}, to_stage={next_stage}",
+    )
     return True
+
+
+def _get_fallback_system_prompt(session: dict) -> str:
+    return get_system_prompt(
+        tech_stack=[t.strip() for t in session["tech_stack"].split(",")],
+        position=session["position"],
+        interview_style=session["interview_style"],
+        difficulty=session["difficulty"],
+        resume_info=session.get("resume_info"),
+    )
 
 
 def start_dual_interview(config: InterviewConfig) -> dict:
@@ -376,16 +413,15 @@ def start_dual_interview(config: InterviewConfig) -> dict:
 
     session = _create_session(config, session_id)
 
+    _log_section(logger, "[MANAGER] System Prompt", content=MANAGER_SYSTEM_PROMPT)
+
     manager_message = _build_manager_start_message(session)
     session["manager_history"].append({"role": "user", "content": manager_message})
 
-    _log(logger, "MANAGER_INPUT", source="start", message=manager_message)
-    manager_response = invoke_manager(session["manager_history"])
-    _log(logger, "MANAGER_OUTPUT", response=manager_response)
+    _log_section(logger, "[MANAGER] Input", meta="source=start", content=manager_message)
+    manager_response = _invoke_session_manager(session, session["manager_history"])
+    _log_section(logger, "[MANAGER] Output", content=manager_response)
     session["manager_history"].append({"role": "assistant", "content": manager_response})
-
-    parsed = _parse_manager_response(manager_response)
-    _log(logger, "MANAGER_PARSED", **parsed)
 
     first_questions = _fetch_questions(session, limit=5)
     if first_questions:
@@ -402,39 +438,27 @@ def start_dual_interview(config: InterviewConfig) -> dict:
             )
         session["current_question_idx"] = 0
 
-    interviewer_prompt = parsed.get("interviewer_prompt", {})
-    system_prompt = interviewer_prompt.get("system_prompt", "")
-    user_message = interviewer_prompt.get("user_message", "")
+    system_prompt = _get_fallback_system_prompt(session)
 
-    if not system_prompt:
-        base_prompt = get_system_prompt(
-            tech_stack=[t.strip() for t in session["tech_stack"].split(",")],
-            position=session["position"],
-            interview_style=session["interview_style"],
-            difficulty=session["difficulty"],
-            resume_info=session["resume_info"],
-        )
-        system_prompt = base_prompt
-
-    if not user_message:
-            current_q = (
-                session["questions"][0]
-                if session["questions"]
-                else None
-            )
-            if current_q:
-                user_message = f"请向候选人提出第一个问题：{current_q['content']}"
-            else:
-                user_message = "请开始面试，向候选人提出第一个问题。"
+    current_q = (
+        session["questions"][0]
+        if session["questions"]
+        else None
+    )
+    if current_q:
+        user_message = f"请向候选人提出第一个问题：{current_q['content']}"
+    else:
+        user_message = "请开始面试，向候选人提出第一个问题。"
 
     session["interviewer_history"].append({"role": "user", "content": user_message})
 
-    _log(logger, "INTERVIEWER_INPUT", system_prompt=system_prompt, user_message=user_message)
+    _log_section(logger, "[INTERVIEWER] System Prompt", content=system_prompt)
+    _log_section(logger, "[INTERVIEWER] User Message", content=user_message)
     interview_reply = invoke_interviewer(
         system_prompt=system_prompt,
         user_message=user_message,
     )
-    _log(logger, "INTERVIEWER_OUTPUT", reply=interview_reply)
+    _log_section(logger, "[INTERVIEWER] Response", content=interview_reply)
 
     if session["questions"]:
         session["questions"][0]["thread"].append(
@@ -477,35 +501,38 @@ def dual_interview_chat(session_id: str, user_input: str) -> dict:
         session["pending_buffer"].append(user_input_stripped)
         full_answer = "\n".join(session["pending_buffer"])
         session["pending_buffer"] = []
-        _log(logger, "FORCE_COMPLETE", answer=full_answer)
+        _log_section(logger, "[FLOW] Force Complete", content=full_answer)
         return _process_complete_answer(session, full_answer, logger)
 
     session["pending_buffer"].append(user_input_stripped)
 
     pending_text = "\n".join(session["pending_buffer"])
-    _log(logger, "PENDING_BUFFER", count=len(session["pending_buffer"]), text=pending_text)
+    _log_section(
+        logger, "[FLOW] Pending Buffer",
+        content=f"count={len(session['pending_buffer'])}\n{pending_text}",
+    )
 
     manager_msg = (
-        f"面试状态：阶段{session['stage']}（{session['stage_name']}），"
-        f"风格：{session['interview_style']}，难度：{session['difficulty']}\n"
         f"候选人发送了消息（可能是完整回答或部分回答）：\n{pending_text}\n\n"
         f"请判断这是否是完整回答。"
     )
     session["manager_history"].append({"role": "user", "content": manager_msg})
-    _log(logger, "MANAGER_INPUT", source="completeness_check")
-    manager_response = invoke_manager(session["manager_history"])
-    _log(logger, "MANAGER_OUTPUT", response=manager_response)
+    _log_section(logger, "[MANAGER] Input", meta="source=completeness_check", content=manager_msg)
+    manager_response = _invoke_session_manager(session, session["manager_history"])
+    _log_section(logger, "[MANAGER] Output", content=manager_response)
     session["manager_history"].append({"role": "assistant", "content": manager_response})
 
-    parsed = _parse_manager_response(manager_response)
-
-    if parsed["action"] == "await_continuation":
-        _log(logger, "AWAIT_CONTINUATION", message=parsed["message_to_candidate"])
+    if _is_await_continuation(manager_response):
+        await_message = _extract_await_message(manager_response)
+        _log_section(
+            logger, "[FLOW] Await Continuation",
+            content=await_message,
+        )
         return {
             "session_id": session_id,
             "action": "await_continuation",
-            "message_to_user": parsed["message_to_candidate"],
-            "reply": parsed["message_to_candidate"],
+            "message_to_user": await_message,
+            "reply": await_message,
             "current_stage": str(session["stage"]),
             "stage_name": session["stage_name"],
         }
@@ -528,44 +555,30 @@ def _process_complete_answer(
     manager_message = _build_manager_chat_message(session, full_answer, current_q)
     session["manager_history"].append({"role": "user", "content": manager_message})
 
-    _log(logger, "MANAGER_INPUT", source="chat", message=manager_message)
-    manager_response = invoke_manager(session["manager_history"])
-    _log(logger, "MANAGER_OUTPUT", response=manager_response)
+    _log_section(logger, "[MANAGER] Input", meta="source=chat", content=manager_message)
+    manager_response = _invoke_session_manager(session, session["manager_history"])
+    _log_section(logger, "[MANAGER] Output", content=manager_response)
     session["manager_history"].append({"role": "assistant", "content": manager_response})
 
-    parsed = _parse_manager_response(manager_response)
-    _log(logger, "MANAGER_PARSED", **parsed)
+    system_prompt = _get_fallback_system_prompt(session)
 
-    interviewer_prompt = parsed.get("interviewer_prompt", {})
-    system_prompt = interviewer_prompt.get("system_prompt", "")
-    user_message = interviewer_prompt.get("user_message", "")
-
-    if not system_prompt:
-        base_prompt = get_system_prompt(
-            tech_stack=[t.strip() for t in session["tech_stack"].split(",")],
-            position=session["position"],
-            interview_style=session["interview_style"],
-            difficulty=session["difficulty"],
-        )
-        system_prompt = base_prompt
-
-    instructions = interviewer_prompt.get("instructions", {})
-    if not user_message:
-        user_message = f"候选人回答：{full_answer}\n\n请给出反馈。"
+    mode_hint = mode_cfg.get("mode_hint", "")
+    user_message = f"候选人回答：{full_answer}\n\n请给出反馈并继续提问。"
+    if manager_response.strip():
+        user_message = f"{user_message}\n\n面试指导：{manager_response.strip()}"
+    if mode_hint:
+        user_message = f"{user_message}\n\n模式提示：{mode_hint}"
 
     context_thread = _get_context_thread(session)
 
-    _log(
-        logger, "INTERVIEWER_INPUT",
-        system_prompt=system_prompt, user_message=user_message,
-        context_len=len(context_thread),
-    )
+    _log_section(logger, "[INTERVIEWER] System Prompt", content=system_prompt)
+    _log_section(logger, "[INTERVIEWER] User Message", content=user_message)
     interview_reply = invoke_interviewer(
         system_prompt=system_prompt,
         user_message=user_message,
         conversation_history=context_thread if context_thread else None,
     )
-    _log(logger, "INTERVIEWER_OUTPUT", reply=interview_reply)
+    _log_section(logger, "[INTERVIEWER] Response", content=interview_reply)
 
     if current_q:
         current_q["thread"].append({"role": "assistant", "content": interview_reply})
@@ -600,12 +613,10 @@ def _handle_stage_advance(session: dict, logger: logging.Logger) -> dict:
     manager_message = _build_manager_stage_advance_message(session, next_stage)
     session["manager_history"].append({"role": "user", "content": manager_message})
 
-    _log(logger, "MANAGER_INPUT", source="stage_advance")
-    manager_response = invoke_manager(session["manager_history"])
-    _log(logger, "MANAGER_OUTPUT", response=manager_response)
+    _log_section(logger, "[MANAGER] Input", meta="source=stage_advance", content=manager_message)
+    manager_response = _invoke_session_manager(session, session["manager_history"])
+    _log_section(logger, "[MANAGER] Output", content=manager_response)
     session["manager_history"].append({"role": "assistant", "content": manager_response})
-
-    parsed = _parse_manager_response(manager_response)
 
     if next_stage <= 3:
         new_questions = _fetch_questions(session, limit=5)
@@ -623,34 +634,23 @@ def _handle_stage_advance(session: dict, logger: logging.Logger) -> dict:
                 )
             session["current_question_idx"] = 0
 
-    interviewer_prompt = parsed.get("interviewer_prompt", {})
-    system_prompt = interviewer_prompt.get("system_prompt", "")
-    user_message = interviewer_prompt.get("user_message", "")
+    system_prompt = _get_fallback_system_prompt(session)
 
-    if not system_prompt:
-        base_prompt = get_system_prompt(
-            tech_stack=[t.strip() for t in session["tech_stack"].split(",")],
-            position=session["position"],
-            interview_style=session["interview_style"],
-            difficulty=session["difficulty"],
-        )
-        system_prompt = base_prompt
-
-    if not user_message:
-        if session["questions"]:
-            first_q = session["questions"][0]
-            user_message = f"进入新阶段。请向候选人提出第一个问题：{first_q['content']}"
-        else:
-            user_message = f"进入阶段 {next_stage}，请开始提问。"
+    if session["questions"]:
+        first_q = session["questions"][0]
+        user_message = f"进入新阶段。请向候选人提出第一个问题：{first_q['content']}"
+    else:
+        user_message = f"进入阶段 {next_stage}，请开始提问。"
 
     session["interviewer_history"] = [{"role": "user", "content": user_message}]
 
-    _log(logger, "INTERVIEWER_INPUT", system_prompt=system_prompt, user_message=user_message)
+    _log_section(logger, "[INTERVIEWER] System Prompt", content=system_prompt)
+    _log_section(logger, "[INTERVIEWER] User Message", content=user_message)
     interview_reply = invoke_interviewer(
         system_prompt=system_prompt,
         user_message=user_message,
     )
-    _log(logger, "INTERVIEWER_OUTPUT", reply=interview_reply)
+    _log_section(logger, "[INTERVIEWER] Response", content=interview_reply)
 
     if session["questions"]:
         session["questions"][0]["thread"].append({"role": "assistant", "content": interview_reply})
@@ -675,7 +675,7 @@ def _handle_final_summary(session: dict, logger: logging.Logger) -> dict:
             if last_q.get("summary") is None:
                 msg = _build_manager_question_summary_message(session, last_q)
                 session["manager_history"].append({"role": "user", "content": msg})
-                summary = invoke_manager(session["manager_history"])
+                summary = _invoke_session_manager(session, session["manager_history"])
                 session["manager_history"].append({"role": "assistant", "content": summary})
                 last_q["summary"] = summary
 
@@ -692,9 +692,9 @@ def _handle_final_summary(session: dict, logger: logging.Logger) -> dict:
     manager_message = _build_manager_summary_message(session)
     session["manager_history"].append({"role": "user", "content": manager_message})
 
-    _log(logger, "MANAGER_INPUT", source="final_summary")
-    manager_response = invoke_manager(session["manager_history"])
-    _log(logger, "MANAGER_OUTPUT", response=manager_response)
+    _log_section(logger, "[MANAGER] Input", meta="source=final_summary", content=manager_message)
+    manager_response = _invoke_session_manager(session, session["manager_history"])
+    _log_section(logger, "[MANAGER] Output", content=manager_response)
 
     return {
         "session_id": session["session_id"],
