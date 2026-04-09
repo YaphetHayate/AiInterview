@@ -4,7 +4,7 @@ from threading import Lock
 from typing import Optional
 from uuid import uuid4
 
-from agents.interviewer_agent import invoke_interviewer
+from agents.interviewer_agent import invoke_interviewer, stream_interviewer
 from agents.manager_agent import MANAGER_SYSTEM_PROMPT, create_manager_agent, invoke_manager_with
 from db.repository import QuestionBankRepository
 from prompt.initialization import get_system_prompt
@@ -721,6 +721,18 @@ def get_session_info(session_id: str) -> Optional[dict]:
     }
 
 
+def get_current_question(session_id: str) -> Optional[str]:
+    with _sessions_lock:
+        session = _sessions.get(session_id)
+    if not session:
+        return None
+    idx = session.get("current_question_idx", -1)
+    questions = session.get("questions", [])
+    if 0 <= idx < len(questions):
+        return questions[idx].get("content", "")
+    return None
+
+
 def reset_dual_session(session_id: str) -> None:
     with _sessions_lock:
         _sessions.pop(session_id, None)
@@ -729,3 +741,290 @@ def reset_dual_session(session_id: str) -> None:
     for handler in logger.handlers[:]:
         handler.close()
         logger.removeHandler(handler)
+
+
+# ── Streaming prepare / stream / finalize ──────────────────────────
+
+
+def prepare_dual_interview_start(config: InterviewConfig) -> tuple[dict, dict]:
+    session_id = str(uuid4())
+    logger = _get_prompt_logger(session_id)
+
+    session = _create_session(config, session_id)
+
+    _log_section(logger, "[MANAGER] System Prompt", content=MANAGER_SYSTEM_PROMPT)
+
+    manager_message = _build_manager_start_message(session)
+    session["manager_history"].append({"role": "user", "content": manager_message})
+
+    _log_section(logger, "[MANAGER] Input", meta="source=start", content=manager_message)
+    manager_response = _invoke_session_manager(session, session["manager_history"])
+    _log_section(logger, "[MANAGER] Output", content=manager_response)
+    session["manager_history"].append({"role": "assistant", "content": manager_response})
+
+    first_questions = _fetch_questions(session, limit=5)
+    if first_questions:
+        for q in first_questions:
+            session["questions"].append(
+                {
+                    "id": q["id"],
+                    "content": q["content"],
+                    "status": "active",
+                    "thread": [],
+                    "summary": None,
+                    "follow_up_count": 0,
+                }
+            )
+        session["current_question_idx"] = 0
+
+    system_prompt = _get_fallback_system_prompt(session)
+
+    current_q = (
+        session["questions"][0]
+        if session["questions"]
+        else None
+    )
+    if current_q:
+        user_message = f"请向候选人提出第一个问题：{current_q['content']}"
+    else:
+        user_message = "请开始面试，向候选人提出第一个问题。"
+
+    session["interviewer_history"].append({"role": "user", "content": user_message})
+
+    _log_section(logger, "[INTERVIEWER] System Prompt", content=system_prompt)
+    _log_section(logger, "[INTERVIEWER] User Message", content=user_message)
+
+    with _sessions_lock:
+        _sessions[session_id] = session
+
+    meta = {
+        "session_id": session_id,
+        "current_stage": str(session["stage"]),
+        "stage_name": session["stage_name"],
+    }
+    stream_params = {
+        "system_prompt": system_prompt,
+        "user_message": user_message,
+        "conversation_history": None,
+        "context": "start",
+    }
+    return meta, stream_params
+
+
+def prepare_dual_interview_chat(session_id: str, user_input: str) -> dict:
+    with _sessions_lock:
+        session = _sessions.get(session_id)
+
+    if not session:
+        raise ValueError(f"会话不存在: {session_id}")
+
+    logger = _get_prompt_logger(session_id)
+    user_input_stripped = user_input.strip()
+
+    user_intent = _detect_user_intent(user_input_stripped)
+
+    if user_intent == "end_interview":
+        return {"action": "complete", "result": _handle_final_summary(session, logger)}
+
+    if user_intent == "advance_stage":
+        return _prepare_stage_advance_stream(session, logger)
+
+    if user_intent == "force_complete":
+        session["pending_buffer"].append(user_input_stripped)
+        full_answer = "\n".join(session["pending_buffer"])
+        session["pending_buffer"] = []
+        _log_section(logger, "[FLOW] Force Complete", content=full_answer)
+        return _prepare_complete_answer_stream(session, full_answer, logger)
+
+    session["pending_buffer"].append(user_input_stripped)
+
+    pending_text = "\n".join(session["pending_buffer"])
+    _log_section(
+        logger, "[FLOW] Pending Buffer",
+        content=f"count={len(session['pending_buffer'])}\n{pending_text}",
+    )
+
+    manager_msg = (
+        f"候选人发送了消息（可能是完整回答或部分回答）：\n{pending_text}\n\n"
+        f"请判断这是否是完整回答。"
+    )
+    session["manager_history"].append({"role": "user", "content": manager_msg})
+    _log_section(logger, "[MANAGER] Input", meta="source=completeness_check", content=manager_msg)
+    manager_response = _invoke_session_manager(session, session["manager_history"])
+    _log_section(logger, "[MANAGER] Output", content=manager_response)
+    session["manager_history"].append({"role": "assistant", "content": manager_response})
+
+    if _is_await_continuation(manager_response):
+        await_message = _extract_await_message(manager_response)
+        _log_section(
+            logger, "[FLOW] Await Continuation",
+            content=await_message,
+        )
+        return {
+            "action": "await",
+            "message": await_message,
+            "session_id": session_id,
+            "current_stage": str(session["stage"]),
+            "stage_name": session["stage_name"],
+        }
+
+    full_answer = "\n".join(session["pending_buffer"])
+    session["pending_buffer"] = []
+    return _prepare_complete_answer_stream(session, full_answer, logger)
+
+
+def _prepare_complete_answer_stream(
+    session: dict, full_answer: str, logger: logging.Logger
+) -> dict:
+    current_q = _get_or_advance_question(session)
+    mode_cfg = MODE_CONFIG.get(session["mode"], MODE_CONFIG["simulation"])
+
+    if current_q:
+        current_q["thread"].append({"role": "user", "content": full_answer})
+        current_q["follow_up_count"] = current_q.get("follow_up_count", 0) + 1
+
+    manager_message = _build_manager_chat_message(session, full_answer, current_q)
+    session["manager_history"].append({"role": "user", "content": manager_message})
+
+    _log_section(logger, "[MANAGER] Input", meta="source=chat", content=manager_message)
+    manager_response = _invoke_session_manager(session, session["manager_history"])
+    _log_section(logger, "[MANAGER] Output", content=manager_response)
+    session["manager_history"].append({"role": "assistant", "content": manager_response})
+
+    system_prompt = _get_fallback_system_prompt(session)
+
+    mode_hint = mode_cfg.get("mode_hint", "")
+    user_message = f"候选人回答：{full_answer}\n\n请给出反馈并继续提问。"
+    if manager_response.strip():
+        user_message = f"{user_message}\n\n面试指导：{manager_response.strip()}"
+    if mode_hint:
+        user_message = f"{user_message}\n\n模式提示：{mode_hint}"
+
+    context_thread = _get_context_thread(session)
+
+    _log_section(logger, "[INTERVIEWER] System Prompt", content=system_prompt)
+    _log_section(logger, "[INTERVIEWER] User Message", content=user_message)
+
+    stream_params = {
+        "system_prompt": system_prompt,
+        "user_message": user_message,
+        "conversation_history": context_thread if context_thread else None,
+        "context": "chat",
+        "current_q_index": session["current_question_idx"],
+    }
+    return {
+        "action": "interview",
+        "stream_params": stream_params,
+        "session_id": session["session_id"],
+        "current_stage": str(session["stage"]),
+        "stage_name": session["stage_name"],
+    }
+
+
+def _prepare_stage_advance_stream(session: dict, logger: logging.Logger) -> dict:
+    current = session["stage"]
+    if current >= 4:
+        return {"action": "complete", "result": _handle_final_summary(session, logger)}
+
+    if not _advance_stage(session, logger):
+        return {"action": "complete", "result": _handle_final_summary(session, logger)}
+
+    next_stage = session["stage"]
+    manager_message = _build_manager_stage_advance_message(session, next_stage)
+    session["manager_history"].append({"role": "user", "content": manager_message})
+
+    _log_section(logger, "[MANAGER] Input", meta="source=stage_advance", content=manager_message)
+    manager_response = _invoke_session_manager(session, session["manager_history"])
+    _log_section(logger, "[MANAGER] Output", content=manager_response)
+    session["manager_history"].append({"role": "assistant", "content": manager_response})
+
+    if next_stage <= 3:
+        new_questions = _fetch_questions(session, limit=5)
+        if new_questions:
+            for q in new_questions:
+                session["questions"].append(
+                    {
+                        "id": q["id"],
+                        "content": q["content"],
+                        "status": "active",
+                        "thread": [],
+                        "summary": None,
+                        "follow_up_count": 0,
+                    }
+                )
+            session["current_question_idx"] = 0
+
+    system_prompt = _get_fallback_system_prompt(session)
+
+    if session["questions"]:
+        first_q = session["questions"][0]
+        user_message = f"进入新阶段。请向候选人提出第一个问题：{first_q['content']}"
+    else:
+        user_message = f"进入阶段 {next_stage}，请开始提问。"
+
+    session["interviewer_history"] = [{"role": "user", "content": user_message}]
+
+    _log_section(logger, "[INTERVIEWER] System Prompt", content=system_prompt)
+    _log_section(logger, "[INTERVIEWER] User Message", content=user_message)
+
+    stream_params = {
+        "system_prompt": system_prompt,
+        "user_message": user_message,
+        "conversation_history": None,
+        "context": "stage_advance",
+    }
+    return {
+        "action": "interview",
+        "stream_params": stream_params,
+        "session_id": session["session_id"],
+        "current_stage": str(session["stage"]),
+        "stage_name": session["stage_name"],
+    }
+
+
+def stream_interview_reply(stream_params: dict):
+    yield from stream_interviewer(
+        system_prompt=stream_params["system_prompt"],
+        user_message=stream_params["user_message"],
+        conversation_history=stream_params.get("conversation_history"),
+    )
+
+
+def finalize_interview(session_id: str, full_reply: str, stream_params: dict) -> None:
+    with _sessions_lock:
+        session = _sessions.get(session_id)
+    if not session:
+        return
+
+    logger = _get_prompt_logger(session_id)
+    _log_section(logger, "[INTERVIEWER] Response", content=full_reply)
+
+    context = stream_params.get("context", "chat")
+
+    if context == "start":
+        if session["questions"]:
+            session["questions"][0]["thread"].append(
+                {"role": "assistant", "content": full_reply}
+            )
+        session["interviewer_history"].append({"role": "assistant", "content": full_reply})
+        session["exchange_count"] = 1
+
+    elif context == "chat":
+        current_q_index = stream_params.get("current_q_index", -1)
+        if 0 <= current_q_index < len(session["questions"]):
+            current_q = session["questions"][current_q_index]
+            current_q["thread"].append({"role": "assistant", "content": full_reply})
+            mode_cfg = MODE_CONFIG.get(session["mode"], MODE_CONFIG["simulation"])
+            max_fu = mode_cfg["max_follow_ups"]
+            if current_q.get("follow_up_count", 0) >= max_fu:
+                current_q["status"] = "max_reached"
+
+        session["interviewer_history"].append({"role": "user", "content": stream_params["user_message"]})
+        session["interviewer_history"].append({"role": "assistant", "content": full_reply})
+        session["exchange_count"] = session.get("exchange_count", 0) + 1
+
+    elif context == "stage_advance":
+        if session["questions"]:
+            session["questions"][0]["thread"].append({"role": "assistant", "content": full_reply})
+        session["interviewer_history"].append({"role": "assistant", "content": full_reply})
+        session["exchange_count"] = 1

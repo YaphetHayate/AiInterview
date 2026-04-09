@@ -1,13 +1,20 @@
+import http.client
 import http.server
 import json
-import urllib.request
-import urllib.error
 import os
+import urllib.parse
 
-BACKEND = "http://127.0.0.1:8003"
+BACKEND_HOST = "127.0.0.1"
+BACKEND_PORT = 8004
 PORT = 3000
 
-API_PATHS = ["/health", "/options", "/chat", "/reset", "/interview/start", "/interview/chat", "/session", "/learning", "/upload/resume", "/styles", "/question-bank"]
+API_PATHS = ["/health", "/options", "/chat", "/reset", "/interview/start", "/interview/chat", "/session", "/learning", "/upload/resume", "/styles", "/question-bank", "/tutor"]
+STREAMING_PATHS = ["/interview", "/tutor/start", "/tutor/chat"]
+
+
+def _is_streaming(path):
+    path = path.split("?")[0]
+    return any(path == p for p in STREAMING_PATHS)
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
@@ -29,33 +36,49 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         content_length = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(content_length) if content_length > 0 else None
 
-        target_url = f"{BACKEND}{self.path}"
+        conn = http.client.HTTPConnection(BACKEND_HOST, BACKEND_PORT)
         headers = {}
         if self.headers.get("Content-Type"):
             headers["Content-Type"] = self.headers.get("Content-Type")
 
         try:
-            req = urllib.request.Request(target_url, data=body, headers=headers, method=method)
-            with urllib.request.urlopen(req) as resp:
+            conn.request(method, self.path, body=body, headers=headers)
+            resp = conn.getresponse()
+
+            if _is_streaming(self.path):
+                self._send_streaming_response(resp)
+            else:
                 resp_data = resp.read()
                 self.send_response(resp.status)
-                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Type", resp.getheader("Content-Type", "application/json"))
                 self.send_header("Access-Control-Allow-Origin", "*")
                 self.end_headers()
                 self.wfile.write(resp_data)
-        except urllib.error.HTTPError as e:
-            error_body = e.read()
-            self.send_response(e.code)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Access-Control-Allow-Origin", "*")
-            self.end_headers()
-            self.wfile.write(error_body)
         except Exception as e:
             self.send_response(502)
             self.send_header("Content-Type", "application/json")
             self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
             self.wfile.write(json.dumps({"detail": str(e)}).encode())
+        finally:
+            conn.close()
+
+    def _send_streaming_response(self, resp):
+        self.send_response(resp.status)
+        self.send_header("Content-Type", resp.getheader("Content-Type", "text/event-stream"))
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+
+        try:
+            while True:
+                chunk = resp.read(1)
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
+                self.wfile.flush()
+        finally:
+            pass
 
     def do_OPTIONS(self):
         self.send_response(200)
@@ -69,5 +92,5 @@ if __name__ == "__main__":
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
     server = http.server.HTTPServer(("0.0.0.0", PORT), Handler)
     print(f"Frontend server running at http://localhost:{PORT}")
-    print(f"Proxying API requests to {BACKEND}")
+    print(f"Proxying API requests to {BACKEND_HOST}:{BACKEND_PORT}")
     server.serve_forever()

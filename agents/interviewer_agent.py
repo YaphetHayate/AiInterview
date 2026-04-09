@@ -1,5 +1,8 @@
+from collections.abc import Generator
 from threading import Lock
+
 from langchain.agents import create_agent
+from langchain_core.messages import AIMessageChunk
 
 from agents.modelFactory import interviewer_chat
 
@@ -68,3 +71,32 @@ def invoke_interviewer(
     if isinstance(content, list):
         return " ".join(str(item) for item in content)
     return str(content)
+
+
+def stream_interviewer(
+    system_prompt: str,
+    user_message: str,
+    conversation_history: list[dict] | None = None,
+) -> Generator[str]:
+    agent = get_or_create_interviewer_agent(system_prompt)
+    messages: list[dict] = []
+    if conversation_history:
+        messages.extend(conversation_history)
+    messages.append({"role": "user", "content": user_message})
+
+    for event in agent.stream({"messages": messages}, stream_mode="messages"):
+        if not isinstance(event, tuple) or len(event) != 2:
+            continue
+        chunk, _metadata = event
+        if not isinstance(chunk, AIMessageChunk):
+            continue
+        content = chunk.content
+        if isinstance(content, str) and content:
+            yield content
+        elif isinstance(content, list):
+            text = "".join(
+                str(item) if isinstance(item, str) else ""
+                for item in content
+            )
+            if text:
+                yield text

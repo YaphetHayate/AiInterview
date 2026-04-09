@@ -314,6 +314,159 @@
             text-align: left;
         }
         .message.ai th { background: #f8fafc; font-weight: 600; }
+
+        /* Tutor Overlay */
+        .tutor-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            display: none;
+            justify-content: center;
+            align-items: center;
+        }
+        .tutor-overlay.show { display: flex; }
+        .tutor-card {
+            background: white;
+            border-radius: 16px;
+            width: 680px;
+            max-width: 92vw;
+            max-height: 88vh;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        .tutor-header {
+            padding: 16px 24px;
+            border-bottom: 1px solid #e2e8f0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .tutor-header-title {
+            font-size: 15px;
+            color: #1e293b;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .tutor-header-title .tutor-badge {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            font-size: 11px;
+            padding: 2px 10px;
+            border-radius: 10px;
+            font-weight: 500;
+        }
+        .tutor-question {
+            padding: 12px 24px;
+            background: #f8fafc;
+            font-size: 14px;
+            color: #475569;
+            border-bottom: 1px solid #e2e8f0;
+            line-height: 1.6;
+        }
+        .tutor-question strong { color: #1e293b; }
+        .tutor-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .tutor-content .message {
+            max-width: 90%;
+        }
+        .tutor-suggestions {
+            padding: 12px 24px;
+            border-top: 1px solid #e2e8f0;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            background: #fafbfc;
+        }
+        .tutor-suggestions:empty { display: none; }
+        .btn-suggestion {
+            padding: 7px 16px;
+            border: 1.5px solid #667eea;
+            background: linear-gradient(135deg, rgba(102,126,234,0.06) 0%, rgba(118,75,162,0.06) 100%);
+            color: #667eea;
+            border-radius: 18px;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+        .btn-suggestion:hover {
+            background: linear-gradient(135deg, rgba(102,126,234,0.18) 0%, rgba(118,75,162,0.18) 100%);
+        }
+        .btn-suggestion:disabled { opacity: 0.5; cursor: not-allowed; }
+        .tutor-input-area {
+            padding: 12px 24px;
+            display: flex;
+            gap: 10px;
+            border-top: 1px solid #e2e8f0;
+            background: white;
+            border-radius: 0 0 16px 16px;
+        }
+        .tutor-input-area textarea {
+            flex: 1;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 10px 14px;
+            font-size: 14px;
+            resize: none;
+            outline: none;
+            font-family: inherit;
+            min-height: 40px;
+            max-height: 100px;
+        }
+        .tutor-input-area textarea:focus { border-color: #667eea; }
+        .btn-tutor-send {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 10px 20px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: opacity 0.2s;
+            white-space: nowrap;
+        }
+        .btn-tutor-send:hover { opacity: 0.9; }
+        .btn-tutor-send:disabled { opacity: 0.5; cursor: not-allowed; }
+        .tutor-close {
+            background: none;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            padding: 6px 16px;
+            font-size: 13px;
+            color: #64748b;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .tutor-close:hover { background: #f1f5f9; color: #334155; }
+        .tutor-typing {
+            align-self: flex-start;
+            background: white;
+            padding: 10px 16px;
+            border-radius: 12px;
+            border-bottom-left-radius: 4px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            display: none;
+            gap: 4px;
+        }
+        .tutor-typing.show { display: flex; }
+        .tutor-typing span {
+            width: 7px; height: 7px;
+            background: #94a3b8;
+            border-radius: 50%;
+            animation: bounce 1.4s infinite ease-in-out;
+        }
+        .tutor-typing span:nth-child(2) { animation-delay: 0.2s; }
+        .tutor-typing span:nth-child(3) { animation-delay: 0.4s; }
     </style>
 </head>
 <body>
@@ -408,12 +561,37 @@
     </div>
 </div>
 
+<!-- Tutor Overlay -->
+<div class="tutor-overlay" id="tutorOverlay">
+    <div class="tutor-card">
+        <div class="tutor-header">
+            <div class="tutor-header-title">
+                知识点学习 <span class="tutor-badge">AI 导师</span>
+            </div>
+            <button class="tutor-close" id="btnTutorClose" onclick="closeTutorOverlay()">关闭学习</button>
+        </div>
+        <div class="tutor-question" id="tutorQuestion"></div>
+        <div class="tutor-content" id="tutorContent">
+            <div class="tutor-typing" id="tutorTyping">
+                <span></span><span></span><span></span>
+            </div>
+        </div>
+        <div class="tutor-suggestions" id="tutorSuggestions"></div>
+        <div class="tutor-input-area">
+            <textarea id="tutorInput" placeholder="输入追问... (Enter 发送, Shift+Enter 换行)" rows="1"></textarea>
+            <button class="btn-tutor-send" id="btnTutorSend" onclick="sendTutorMessage()">发送</button>
+        </div>
+    </div>
+</div>
+
 <script>
-    const API_BASE = '';
+    const API_BASE = 'http://127.0.0.1:8004';
     let sessionId = null;
     let isSending = false;
     let selectedFile = null;
     let selectedMode = 'learning';
+    let tutorSessionId = null;
+    let isTutorSending = false;
 
     // Elements
     const startPage = document.getElementById('startPage');
@@ -432,10 +610,99 @@
     const uploadArea = document.getElementById('uploadArea');
     const uploadText = document.getElementById('uploadText');
     const uploadIcon = document.getElementById('uploadIcon');
+    const tutorOverlay = document.getElementById('tutorOverlay');
+    const tutorQuestion = document.getElementById('tutorQuestion');
+    const tutorContent = document.getElementById('tutorContent');
+    const tutorTyping = document.getElementById('tutorTyping');
+    const tutorSuggestions = document.getElementById('tutorSuggestions');
+    const tutorInput = document.getElementById('tutorInput');
+    const btnTutorSend = document.getElementById('btnTutorSend');
 
-    // Load options on start
     const FALLBACK_STACKS = ["Java", "Python", "Go", "JavaScript/TypeScript", "C++", "Rust"];
     const FALLBACK_POSITIONS = ["后端开发", "前端开发", "全栈开发", "算法工程师", "大数据开发", "测试开发"];
+
+    // ── SSE Consumer ──────────────────────────────────────────────
+
+    async function consumeSSE(response, handlers) {
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop();
+
+            for (const line of lines) {
+                const trimmed = line.trim();
+                if (!trimmed) continue;
+                if (!trimmed.startsWith('data: ')) continue;
+                try {
+                    const event = JSON.parse(trimmed.slice(6));
+                    const type = event.type;
+                    if (type === 'session' && handlers.onSession) handlers.onSession(event);
+                    else if (type === 'chunk' && handlers.onChunk) handlers.onChunk(event);
+                    else if (type === 'await' && handlers.onAwait) handlers.onAwait(event);
+                    else if (type === 'suggestions' && handlers.onSuggestions) handlers.onSuggestions(event);
+                    else if (type === 'error' && handlers.onError) handlers.onError(event);
+                    else if (type === 'done' && handlers.onDone) handlers.onDone(event);
+                } catch (e) {
+                    console.warn('Failed to parse SSE event:', trimmed, e);
+                }
+            }
+        }
+    }
+
+    // ── Streaming Message Rendering ───────────────────────────────
+
+    function createStreamingMessage(container, beforeEl) {
+        const div = document.createElement('div');
+        div.className = 'message ai';
+        container.insertBefore(div, beforeEl);
+        return div;
+    }
+
+    function startBufferedRenderer(msgEl) {
+        let buffer = '';
+        let renderTimer = null;
+        let lastRenderLen = 0;
+
+        function scheduleRender() {
+            if (renderTimer) return;
+            renderTimer = setTimeout(() => {
+                renderTimer = null;
+                if (buffer.length !== lastRenderLen) {
+                    msgEl.innerHTML = marked.parse(buffer);
+                    lastRenderLen = buffer.length;
+                    const container = msgEl.parentElement;
+                    if (container) container.scrollTop = container.scrollHeight;
+                }
+            }, 50);
+        }
+
+        return {
+            append(text) {
+                buffer += text;
+                scheduleRender();
+            },
+            finalize() {
+                if (renderTimer) {
+                    clearTimeout(renderTimer);
+                    renderTimer = null;
+                }
+                msgEl.innerHTML = marked.parse(buffer);
+                const container = msgEl.parentElement;
+                if (container) container.scrollTop = container.scrollHeight;
+                return buffer;
+            },
+            getBuffer() { return buffer; }
+        };
+    }
+
+    // ── Load options ──────────────────────────────────────────────
 
     async function loadOptions() {
         let stacks = FALLBACK_STACKS;
@@ -466,7 +733,7 @@
         if (input.files.length > 0) {
             selectedFile = input.files[0];
             uploadArea.classList.add('has-file');
-            uploadIcon.textContent = '✅';
+            uploadIcon.textContent = '\u2705';
             uploadText.innerHTML = `<div class="file-name">${selectedFile.name}</div>`;
         }
     }
@@ -483,6 +750,8 @@
         const btn = document.getElementById('btnStart');
         btn.textContent = mode === 'learning' ? '开始学习' : '开始面试';
     }
+
+    // ── Start Interview (SSE) ─────────────────────────────────────
 
     async function startInterview() {
         const stack = techStack.value;
@@ -505,18 +774,13 @@
 
             const diff = difficulty.value;
             const style = interviewStyle.options[interviewStyle.selectedIndex].text;
+
             const res = await fetch(`${API_BASE}/interview`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ tech_stack: [stack], position: pos, difficulty: diff, style: style, resume_filename: selectedFile?.name, mode: 'dual_agent', ui_mode: selectedMode })
-            });
-            const data = await res.json();
 
             if (!res.ok) {
-                throw new Error(data.detail || `请求失败 (${res.status})`);
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err.detail || `请求失败 (${res.status})`);
             }
-
-            sessionId = data.session_id;
 
             const diffLabel = difficulty.options[difficulty.selectedIndex].text;
             const modeLabel = selectedMode === 'simulation' ? '拟真模式' : '学习模式';
@@ -528,13 +792,26 @@
             startPage.classList.remove('active');
             chatPage.classList.add('active');
 
-            if (data.reply) {
-                addMessage(data.reply, 'ai');
-            }
+            const msgEl = createStreamingMessage(chatContainer, typingIndicator);
+            const renderer = startBufferedRenderer(msgEl);
 
-            if (selectedMode === 'learning') {
-                addLearnButton();
-            }
+            await consumeSSE(res, {
+                onSession(event) {
+                    if (event.session_id) sessionId = event.session_id;
+                },
+                onChunk(event) {
+                    renderer.append(event.content);
+                },
+                onError(event) {
+                    renderer.append(`\n\n> **Error:** ${event.message}`);
+                },
+                onDone() {
+                    renderer.finalize();
+                    if (selectedMode === 'learning') {
+                        addLearnButton();
+                    }
+                }
+            });
         } catch (e) {
             alert('启动失败: ' + e.message);
         } finally {
@@ -553,6 +830,8 @@
         }
         sessionId = null;
         chatContainer.querySelectorAll('.message').forEach(el => el.remove());
+        const learnBtn = document.getElementById('btnLearn');
+        if (learnBtn) learnBtn.remove();
         chatPage.classList.remove('active');
         startPage.classList.add('active');
     }
@@ -565,36 +844,12 @@
         messageInput.style.height = Math.min(messageInput.scrollHeight, 120) + 'px';
     });
 
+    // ── addMessage (non-streaming, for user messages & errors) ────
+
     function addMessage(text, type) {
         const div = document.createElement('div');
         div.className = `message ${type}`;
-        
-        const isLearningQuestion = type === 'ai' && text.includes('**') && (text.includes('你了解这个知识点') || text.includes('请简单说说'));
-        
-        if (isLearningQuestion) {
-            const parts = text.split(/\n\n+/);
-            parts.forEach((part, idx) => {
-                const partSpan = document.createElement('span');
-                partSpan.style.display = 'block';
-                
-                const boldMatch = part.match(/^\*\*([\s\S]+?)\*\*$/);
-                if (boldMatch) {
-                    partSpan.innerHTML = `<strong style="font-size:18px;color:#1e293b;font-weight:700;">${boldMatch[1]}</strong>`;
-                } else if (part.includes('你了解这个知识点') || part.includes('请简单说说') || part.includes('如果不了解') || part.includes('让我们来学习') || part.includes('知识点吧')) {
-                    partSpan.innerHTML = `<span style="color:#94a3b8;font-size:13px;">${part}</span>`;
-                } else {
-                    partSpan.innerHTML = marked.parse(part);
-                }
-                
-                if (idx > 0) partSpan.style.marginTop = '8px';
-                div.appendChild(partSpan);
-            });
-        } else if (type === 'ai') {
-            div.innerHTML = marked.parse(text);
-        } else {
-            div.textContent = text;
-        }
-        
+        div.textContent = text;
         chatContainer.insertBefore(div, typingIndicator);
         chatContainer.scrollTop = chatContainer.scrollHeight;
     }
@@ -605,6 +860,8 @@
     }
 
     function addLearnButton() {
+        const existing = document.getElementById('btnLearn');
+        if (existing) return;
         const btn = document.createElement('button');
         btn.className = 'btn-learn';
         btn.id = 'btnLearn';
@@ -614,33 +871,7 @@
         chatContainer.scrollTop = chatContainer.scrollHeight;
     }
 
-    async function requestExplain(btn) {
-        btn.disabled = true;
-        btn.textContent = '正在讲解...';
-        showTyping(true);
-
-        try {
-            const res = await fetch(`${API_BASE}/interview`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message: '__explain__', session_id: sessionId })
-            });
-            if (!res.ok) {
-                const err = await res.json().catch(() => ({}));
-                throw new Error(err.detail || `请求失败 (${res.status})`);
-            }
-            const data = await res.json();
-            if (data.session_id) sessionId = data.session_id;
-            addMessage(data.reply, 'ai');
-            btn.remove();
-        } catch (e) {
-            addMessage(`出错了: ${e.message}`, 'error');
-            btn.disabled = false;
-            btn.textContent = '学习一下';
-        } finally {
-            showTyping(false);
-        }
-    }
+    // ── Send Message (SSE) ────────────────────────────────────────
 
     async function sendMessage() {
         const text = messageInput.value.trim();
@@ -655,13 +886,10 @@
         showTyping(true);
 
         try {
-            const endpoint = `${API_BASE}/interview`;
-            const body = { message: text, session_id: sessionId };
-
-            const res = await fetch(endpoint, {
+            const res = await fetch(`${API_BASE}/interview`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(body)
+                body: JSON.stringify({ message: text, session_id: sessionId })
             });
 
             if (!res.ok) {
@@ -669,20 +897,214 @@
                 throw new Error(err.detail || `请求失败 (${res.status})`);
             }
 
-            const data = await res.json();
-            if (data.session_id) sessionId = data.session_id;
-            addMessage(data.reply, 'ai');
+            showTyping(false);
+            const msgEl = createStreamingMessage(chatContainer, typingIndicator);
+            const renderer = startBufferedRenderer(msgEl);
+
+            await consumeSSE(res, {
+                onSession(event) {
+                    if (event.session_id) sessionId = event.session_id;
+                },
+                onChunk(event) {
+                    renderer.append(event.content);
+                },
+                onAwait(event) {
+                    msgEl.innerHTML = marked.parse(event.message);
+                    chatContainer.scrollTop = chatContainer.scrollHeight;
+                },
+                onError(event) {
+                    renderer.append(`\n\n> **Error:** ${event.message}`);
+                },
+                onDone() {
+                    const fullText = renderer.finalize();
+                    if (selectedMode === 'learning' && fullText.trim()) {
+                        addLearnButton();
+                    }
+                }
+            });
         } catch (e) {
+            showTyping(false);
             addMessage(`出错了: ${e.message}`, 'error');
             statusDot.classList.add('offline');
             statusText.textContent = '连接异常';
         } finally {
-            showTyping(false);
             isSending = false;
             sendBtn.disabled = false;
             messageInput.focus();
         }
     }
+
+    // ── Tutor: requestExplain (SSE) ───────────────────────────────
+
+    async function requestExplain(btn) {
+        btn.disabled = true;
+        btn.textContent = '正在准备...';
+
+        const aiMessages = chatContainer.querySelectorAll('.message.ai');
+        const lastAiMsg = aiMessages[aiMessages.length - 1];
+        const questionText = lastAiMsg ? lastAiMsg.textContent.trim() : '';
+        const stack = techStack.options[techStack.selectedIndex]?.text || techStack.value;
+        const diff = difficulty.value;
+
+        try {
+            const res = await fetch(`${API_BASE}/tutor/start`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    session_id: sessionId,
+                    question: questionText,
+                    tech_stack: stack,
+                    difficulty: diff,
+                })
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err.detail || `请求失败 (${res.status})`);
+            }
+
+            btn.remove();
+            openTutorOverlay();
+
+            let currentQuestion = questionText;
+            const msgEl = createStreamingMessage(tutorContent, tutorTyping);
+            const renderer = startBufferedRenderer(msgEl);
+
+            await consumeSSE(res, {
+                onSession(event) {
+                    if (event.tutor_session_id) tutorSessionId = event.tutor_session_id;
+                    if (event.question) currentQuestion = event.question;
+                },
+                onChunk(event) {
+                    renderer.append(event.content);
+                },
+                onSuggestions(event) {
+                    renderTutorSuggestions(event.items || []);
+                },
+                onError(event) {
+                    renderer.append(`\n\n> **Error:** ${event.message}`);
+                },
+                onDone() {
+                    renderer.finalize();
+                    tutorQuestion.innerHTML = `<strong>当前面试问题：</strong>${currentQuestion}`;
+                }
+            });
+        } catch (e) {
+            addMessage(`出错了: ${e.message}`, 'error');
+            btn.disabled = false;
+            btn.textContent = '学习一下';
+        }
+    }
+
+    function openTutorOverlay() {
+        tutorContent.querySelectorAll('.message').forEach(el => el.remove());
+        tutorSuggestions.innerHTML = '';
+        tutorOverlay.classList.add('show');
+        messageInput.disabled = true;
+        sendBtn.disabled = true;
+    }
+
+    function closeTutorOverlay() {
+        if (tutorSessionId) {
+            fetch(`${API_BASE}/tutor/end`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ tutor_session_id: tutorSessionId })
+            }).catch(() => {});
+        }
+        tutorSessionId = null;
+        tutorOverlay.classList.remove('show');
+        messageInput.disabled = false;
+        sendBtn.disabled = false;
+        messageInput.focus();
+    }
+
+    function renderTutorSuggestions(questions) {
+        tutorSuggestions.innerHTML = '';
+        if (!questions || questions.length === 0) return;
+        questions.forEach(q => {
+            const btn = document.createElement('button');
+            btn.className = 'btn-suggestion';
+            btn.textContent = q;
+            btn.onclick = () => sendTutorChat(q, btn);
+            tutorSuggestions.appendChild(btn);
+        });
+    }
+
+    function showTutorTyping(show) {
+        tutorTyping.classList.toggle('show', show);
+        tutorContent.scrollTop = tutorContent.scrollHeight;
+    }
+
+    // ── Tutor: sendTutorChat (SSE) ────────────────────────────────
+
+    async function sendTutorChat(message, clickedBtn) {
+        if (isTutorSending || !tutorSessionId) return;
+        isTutorSending = true;
+
+        if (clickedBtn) {
+            tutorSuggestions.querySelectorAll('.btn-suggestion').forEach(b => b.disabled = true);
+        }
+        btnTutorSend.disabled = true;
+
+        const userDiv = document.createElement('div');
+        userDiv.className = 'message user';
+        userDiv.textContent = message;
+        tutorContent.insertBefore(userDiv, tutorTyping);
+        tutorContent.scrollTop = tutorContent.scrollHeight;
+
+        const msgEl = createStreamingMessage(tutorContent, tutorTyping);
+        const renderer = startBufferedRenderer(msgEl);
+
+        try {
+            const res = await fetch(`${API_BASE}/tutor/chat`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ tutor_session_id: tutorSessionId, message })
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err.detail || `请求失败 (${res.status})`);
+            }
+
+            await consumeSSE(res, {
+                onSession() {},
+                onChunk(event) {
+                    renderer.append(event.content);
+                },
+                onSuggestions(event) {
+                    renderTutorSuggestions(event.items || []);
+                },
+                onError(event) {
+                    renderer.append(`\n\n> **Error:** ${event.message}`);
+                },
+                onDone() {
+                    renderer.finalize();
+                }
+            });
+        } catch (e) {
+            renderer.append(`\n\n> **Error:** ${e.message}`);
+            renderer.finalize();
+        } finally {
+            isTutorSending = false;
+            btnTutorSend.disabled = false;
+        }
+    }
+
+    async function sendTutorMessage() {
+        const text = tutorInput.value.trim();
+        if (!text || isTutorSending) return;
+        tutorInput.value = '';
+        tutorInput.style.height = 'auto';
+        await sendTutorChat(text, null);
+    }
+
+    tutorInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendTutorMessage(); }
+    });
+    tutorInput.addEventListener('input', () => {
+        tutorInput.style.height = 'auto';
+        tutorInput.style.height = Math.min(tutorInput.scrollHeight, 100) + 'px';
+    });
 
     async function resetInterview() {
         if (sessionId) {
@@ -694,6 +1116,8 @@
         }
         sessionId = null;
         chatContainer.querySelectorAll('.message').forEach(el => el.remove());
+        const learnBtn = document.getElementById('btnLearn');
+        if (learnBtn) learnBtn.remove();
         backToStart();
     }
 
