@@ -5,7 +5,7 @@ import os
 import urllib.parse
 
 BACKEND_HOST = "127.0.0.1"
-BACKEND_PORT = 8004
+BACKEND_PORT = 8003
 PORT = 3000
 
 API_PATHS = ["/health", "/options", "/chat", "/reset", "/interview/start", "/interview/chat", "/session", "/learning", "/upload/resume", "/styles", "/question-bank", "/tutor"]

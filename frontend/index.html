@@ -7,6 +7,12 @@
     <script src="marked.umd.js"></script>
     
     <style>
+        :root {
+            --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            --primary-gradient-subtle: linear-gradient(135deg, rgba(102,126,234,0.1) 0%, rgba(118,75,162,0.1) 100%);
+            --primary-gradient-hover: linear-gradient(135deg, rgba(102,126,234,0.2) 0%, rgba(118,75,162,0.2) 100%);
+            --primary: #667eea;
+        }
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -18,7 +24,7 @@
 
         /* Header */
         .header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: var(--primary-gradient);
             color: white;
             padding: 16px 24px;
             display: flex;
@@ -45,7 +51,7 @@
 
         /* Start Page */
         .start-page {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: var(--primary-gradient);
             justify-content: center;
             align-items: center;
         }
@@ -126,7 +132,7 @@
             background: white;
         }
         .mode-card:hover { border-color: #667eea; }
-        .mode-card.selected { border-color: #667eea; background: linear-gradient(135deg, rgba(102,126,234,0.1) 0%, rgba(118,75,162,0.1) 100%); }
+        .mode-card.selected { border-color: #667eea; background: var(--primary-gradient-subtle); }
         .mode-icon { font-size: 28px; margin-bottom: 8px; }
         .mode-title { font-size: 15px; font-weight: 600; color: #1e293b; margin-bottom: 4px; }
         .mode-desc { font-size: 12px; color: #64748b; line-height: 1.4; }
@@ -134,7 +140,7 @@
         .btn-start {
             width: 100%;
             padding: 14px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: var(--primary-gradient);
             color: white;
             border: none;
             border-radius: 8px;
@@ -166,7 +172,7 @@
         }
         .message.user {
             align-self: flex-end;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: var(--primary-gradient);
             color: white;
             border-bottom-right-radius: 4px;
         }
@@ -183,7 +189,7 @@
             color: #dc2626;
             max-width: 90%;
         }
-        .typing-indicator {
+        .typing-indicator, .tutor-typing {
             align-self: flex-start;
             background: white;
             padding: 12px 20px;
@@ -191,16 +197,19 @@
             border-bottom-left-radius: 4px;
             box-shadow: 0 1px 3px rgba(0,0,0,0.1);
             display: none;
+            gap: 4px;
         }
-        .typing-indicator.show { display: flex; gap: 4px; }
-        .typing-indicator span {
+        .typing-indicator.show, .tutor-typing.show { display: flex; }
+        .typing-indicator span, .tutor-typing span {
             width: 8px; height: 8px;
             background: #94a3b8;
             border-radius: 50%;
             animation: bounce 1.4s infinite ease-in-out;
         }
-        .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
-        .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+        .typing-indicator span:nth-child(2), .tutor-typing span:nth-child(2) { animation-delay: 0.2s; }
+        .typing-indicator span:nth-child(3), .tutor-typing span:nth-child(3) { animation-delay: 0.4s; }
+        .tutor-typing { padding: 10px 16px; }
+        .tutor-typing span { width: 7px; height: 7px; }
         @keyframes bounce {
             0%, 80%, 100% { transform: translateY(0); }
             40% { transform: translateY(-8px); }
@@ -227,7 +236,7 @@
         }
         .input-area textarea:focus { border-color: #667eea; }
         .btn-send {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: var(--primary-gradient);
             color: white;
             border: none;
             border-radius: 8px;
@@ -253,7 +262,7 @@
             margin-bottom: 8px;
             padding: 8px 20px;
             border: 2px solid #667eea;
-            background: linear-gradient(135deg, rgba(102,126,234,0.08) 0%, rgba(118,75,162,0.08) 100%);
+            background: var(--primary-gradient-subtle);
             color: #667eea;
             border-radius: 20px;
             font-size: 14px;
@@ -261,7 +270,7 @@
             cursor: pointer;
             transition: all 0.2s;
         }
-        .btn-learn:hover { background: linear-gradient(135deg, rgba(102,126,234,0.2) 0%, rgba(118,75,162,0.2) 100%); }
+        .btn-learn:hover { background: var(--primary-gradient-hover); }
         .btn-learn:disabled { opacity: 0.5; cursor: not-allowed; }
 
         .message.ai h1, .message.ai h2, .message.ai h3, .message.ai h4 {
@@ -352,7 +361,7 @@
             gap: 8px;
         }
         .tutor-header-title .tutor-badge {
-            background: linear-gradient(135deg, #667eea, #764ba2);
+            background: var(--primary-gradient);
             color: white;
             font-size: 11px;
             padding: 2px 10px;
@@ -391,7 +400,7 @@
         .btn-suggestion {
             padding: 7px 16px;
             border: 1.5px solid #667eea;
-            background: linear-gradient(135deg, rgba(102,126,234,0.06) 0%, rgba(118,75,162,0.06) 100%);
+            background: var(--primary-gradient-subtle);
             color: #667eea;
             border-radius: 18px;
             font-size: 13px;
@@ -400,7 +409,7 @@
             white-space: nowrap;
         }
         .btn-suggestion:hover {
-            background: linear-gradient(135deg, rgba(102,126,234,0.18) 0%, rgba(118,75,162,0.18) 100%);
+            background: var(--primary-gradient-hover);
         }
         .btn-suggestion:disabled { opacity: 0.5; cursor: not-allowed; }
         .tutor-input-area {
@@ -425,7 +434,7 @@
         }
         .tutor-input-area textarea:focus { border-color: #667eea; }
         .btn-tutor-send {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: var(--primary-gradient);
             color: white;
             border: none;
             border-radius: 8px;
@@ -448,25 +457,6 @@
             transition: all 0.2s;
         }
         .tutor-close:hover { background: #f1f5f9; color: #334155; }
-        .tutor-typing {
-            align-self: flex-start;
-            background: white;
-            padding: 10px 16px;
-            border-radius: 12px;
-            border-bottom-left-radius: 4px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-            display: none;
-            gap: 4px;
-        }
-        .tutor-typing.show { display: flex; }
-        .tutor-typing span {
-            width: 7px; height: 7px;
-            background: #94a3b8;
-            border-radius: 50%;
-            animation: bounce 1.4s infinite ease-in-out;
-        }
-        .tutor-typing span:nth-child(2) { animation-delay: 0.2s; }
-        .tutor-typing span:nth-child(3) { animation-delay: 0.4s; }
     </style>
 </head>
 <body>
@@ -585,7 +575,7 @@
 </div>
 
 <script>
-    const API_BASE = 'http://127.0.0.1:8004';
+    const API_BASE = 'http://127.0.0.1:8003';
     let sessionId = null;
     let isSending = false;
     let selectedFile = null;
@@ -738,6 +728,25 @@
         }
     }
 
+    uploadArea.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        uploadArea.classList.add('has-file');
+    });
+    uploadArea.addEventListener('dragleave', () => {
+        if (!selectedFile) uploadArea.classList.remove('has-file');
+    });
+    uploadArea.addEventListener('drop', (e) => {
+        e.preventDefault();
+        const file = e.dataTransfer.files[0];
+        if (file) {
+            const input = document.getElementById('resumeFile');
+            const dt = new DataTransfer();
+            dt.items.add(file);
+            input.files = dt.files;
+            handleFileSelect(input);
+        }
+    });
+
     function selectMode(mode) {
         selectedMode = mode;
         document.querySelectorAll('.mode-card').forEach(card => {
@@ -776,6 +785,16 @@
             const style = interviewStyle.options[interviewStyle.selectedIndex].text;
 
             const res = await fetch(`${API_BASE}/interview`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    tech_stack: [stack],
+                    position: pos || undefined,
+                    difficulty: diff,
+                    style,
+                    ui_mode: selectedMode,
+                })
+            });
 
             if (!res.ok) {
                 const err = await res.json().catch(() => ({}));
@@ -1111,13 +1130,10 @@
             await fetch(`${API_BASE}/session/reset`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ session_id: sessionId, message: '' })
+                body: JSON.stringify({ session_id: sessionId })
             }).catch(() => {});
         }
         sessionId = null;
-        chatContainer.querySelectorAll('.message').forEach(el => el.remove());
-        const learnBtn = document.getElementById('btnLearn');
-        if (learnBtn) learnBtn.remove();
         backToStart();
     }
 
